@@ -12,24 +12,50 @@ const BookingForm = () => {
     notes: "",
   });
 
+  const [loading, setLoading] = useState(false);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  // ✅ THIS IS handleSubmit (this is what you were missing)
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Booking Submitted:", formData);
-    alert("Your trip request has been submitted! Amigos team will contact you soon.");
-    setFormData({
-      name: "",
-      phone: "",
-      email: "",
-      destination: "",
-      travelDate: "",
-      travelers: 1,
-      budget: "",
-      notes: "",
-    });
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:5000/plan-trip", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Submission failed");
+      }
+
+      alert("Your trip request has been submitted! Our team will contact you soon.");
+
+      setFormData({
+        name: "",
+        phone: "",
+        email: "",
+        destination: "",
+        travelDate: "",
+        travelers: 1,
+        budget: "",
+        notes: "",
+      });
+    } catch (error) {
+      console.error("Error submitting trip request:", error);
+      alert("Failed to submit request. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -42,25 +68,25 @@ const BookingForm = () => {
             name="name"
             value={formData.name}
             onChange={handleChange}
-            placeholder="Full Name"
+            placeholder="Full Name* (required)"
             required
-            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
+            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 required"
           />
           <input
             type="tel"
             name="phone"
             value={formData.phone}
             onChange={handleChange}
-            placeholder="Phone Number"
+            placeholder="Phone Number* (required)"
             required
-            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
+            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 required"
           />
           <input
             type="email"
             name="email"
             value={formData.email}
             onChange={handleChange}
-            placeholder="Email Address"
+            placeholder="Email Address (optional)"
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
           <input
@@ -104,9 +130,10 @@ const BookingForm = () => {
           />
           <button
             type="submit"
-            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-60"
           >
-            Submit Booking
+            {loading ? "Submitting..." : "Submit Trip Request"}
           </button>
         </form>
       </div>

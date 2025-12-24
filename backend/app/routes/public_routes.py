@@ -22,21 +22,25 @@ def get_destinations():
 def plan_trip():
     data = request.get_json()
 
-    # Create a new TripRequest
     new_request = TripRequest(
-        user_name=data.get('user_name'),
-        contact_number=data.get('contact_number'),
-        selected_destinations=data.get('selected_destinations'),
-        travel_dates=data.get('travel_dates'),
-        num_travelers=data.get('num_travelers'),
-        budget_range=data.get('budget_range'),
+        user_name=data.get('name'),
+        contact_number=data.get('phone'),
+        email=data.get('email'),
+        selected_destinations=data.get('destination'),
+        travel_dates=data.get('travelDate'),
+        num_travelers=data.get('travelers'),
+        budget_range=data.get('budget'),
         notes=data.get('notes'),
     )
 
     db.session.add(new_request)
     db.session.commit()
 
-    return jsonify({"message": "Trip request submitted successfully!"}), 201
+    return jsonify({
+        "message": "Trip request submitted successfully!",
+        "request_id": new_request.id
+    }), 201
+
 
 # Quick Booking - Create
 @public_bp.route("/quick-booking", methods=["POST"])
