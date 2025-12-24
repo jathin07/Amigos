@@ -1,0 +1,98 @@
+
+
+/* General App styling */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f9fafb; /* Tailwind gray-50 */
+  color: #1f2937; /* Tailwind gray-800 */
+  margin: 0;
+  padding: 0;
+  scroll-behavior: smooth;
+}
+
+/* Navbar adjustments */
+nav {
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* Footer */
+footer {
+  background-color: #111827; /* Tailwind gray-900 */
+  color: #f3f4f6; /* gray-100 */
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+/* Smooth infinite scroll animation */
+@keyframes scroll-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes scroll-right {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(50%); }
+}
+
+.scroll-row {
+  display: flex;
+  width: max-content;
+}
+
+.animate-scroll-left {
+  animation: scroll-left 35s linear infinite;
+}
+
+.animate-scroll-right {
+  animation: scroll-right 35s linear infinite;
+}
+
+
+
+/* Links */
+a {
+  color: #4f46e5; /* indigo-600 */
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: #4338ca; /* indigo-700 */
+}
+
+/* Buttons */
+button {
+  transition: all 0.2s ease-in-out;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
+
+/* Package cards grid layout */
+.package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 1.5rem;
+  padding: 2rem 1rem;
+}
+
+/* Smooth fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease forwards;
+}
