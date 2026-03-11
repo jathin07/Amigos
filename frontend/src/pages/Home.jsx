@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
 import PackageCard from "../components/PackageCard";
 import "./Home.css";
-import { placesByState } from "../data/PlacesData";
+import { placesByState as fallbackPlaces } from "../data/PlacesData";
 import { useParallax } from "../hooks/useParallax";
+import { apiFetch } from "../config/api";
 import { useRef, useState, useEffect } from "react";
 import PlacesCarousel from "../components/PlacesCarousel";
 import { featuredPackages } from "./PackagesList";
-
 /**
  * FadeIn Component
  * key-concept: uses IntersectionObserver to trigger a fade-up animation
@@ -62,9 +62,33 @@ const Home = () => {
   const baseImages = ["Trip1", "Trip2", "Trip3", "Trip4"];
   const images = [...baseImages, ...baseImages, ...baseImages];
 
+  const [placesByState, setPlacesByState] = useState(fallbackPlaces || []);
   const [activeState, setActiveState] = useState("Tamil Nadu");
   const [expandedId, setExpandedId] = useState(null);
 
+  useEffect(() => {
+    async function loadDestinations() {
+      try {
+        const data = await apiFetch("/destinations");
+
+        if (Array.isArray(data)) {
+          if (data.length > 0) {
+            setPlacesByState(data);
+
+            // set first state as active if not already set or if current state is not in the data
+            const hasActiveState = data.some(d => d.state === activeState);
+            if (!activeState || !hasActiveState) {
+              setActiveState(data[0].state);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load destinations:", error);
+      }
+    }
+
+    loadDestinations();
+  }, []);
   const toggleExpand = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };

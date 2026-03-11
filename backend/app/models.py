@@ -6,102 +6,199 @@ from datetime import datetime
 # Destination (places catalog)
 # -------------------------
 class Destination(db.Model):
+    __tablename__ = "destinations"
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    state = db.Column(db.String(100))
     description = db.Column(db.Text)
     image_url = db.Column(db.String(255))
-    tags = db.Column(db.String(100))  # e.g., hills, beach, culture
+    tags = db.Column(db.String(255))
 
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    packages = db.relationship(
+        "PackageDestination",
+        backref="destination",
+        cascade="all, delete"
+    )
 
 # -------------------------
-# Itinerary / Package
+# Travel Packages
 # -------------------------
-class Itinerary(db.Model):
+class Package(db.Model):
+    __tablename__ = "packages"
+
     id = db.Column(db.Integer, primary_key=True)
-
-    # Basic Package Info
     title = db.Column(db.String(150), nullable=False)
-    duration_days = db.Column(db.Integer, nullable=False)
-    duration_nights = db.Column(db.Integer, nullable=False)
-    short_description = db.Column(db.Text, nullable=False)
-    thumbnail_url = db.Column(db.String(255), nullable=True)
+    description = db.Column(db.Text)
 
-    # Pricing
-    price_per_person = db.Column(db.Float, nullable=False)
-    total_price = db.Column(db.Float, nullable=True)
+    duration_days = db.Column(db.Integer)
+    duration_nights = db.Column(db.Integer)
 
-    # Highlights / Inclusions
-    inclusions = db.Column(db.Text, nullable=True)   # Store as JSON or comma-separated
-    exclusions = db.Column(db.Text, nullable=True)
+    price_per_person = db.Column(db.Float)
+    thumbnail_url = db.Column(db.String(255))
 
-    # Mini Itinerary Preview
-    mini_itinerary = db.Column(db.Text, nullable=True)  # JSON or plain text
+    highlights = db.Column(db.Text)
 
-    # Optional PDF link (for detailed download)
-    pdf_file_url = db.Column(db.String(255), nullable=True)
-
-    # Meta Info
-    created_by_admin = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    destinations = db.relationship(
+        "PackageDestination",
+        backref="package",
+        cascade="all, delete"
+    )
+
 
 # -------------------------
-# Trip Requests (Plan My Trip Form)
+# Package ↔ Destination relation
+# (One package can have many destinations)
 # -------------------------
-class TripRequest(db.Model):
+class PackageDestination(db.Model):
+    __tablename__ = "package_destinations"
+
     id = db.Column(db.Integer, primary_key=True)
-    user_name = db.Column(db.String(100), nullable=False)
-    contact_number = db.Column(db.String(20), nullable=False)
-    email = db.Column(db.String(120), nullable=True)
-    selected_destinations = db.Column(db.String(255))  # Comma-separated IDs for now
-    travel_dates = db.Column(db.String(50))
-    num_travelers = db.Column(db.Integer)
-    budget_range = db.Column(db.String(50))
-    notes = db.Column(db.Text)
-    status = db.Column(db.String(20), default="pending")  # pending/contacted/closed
-    pdf_itinerary_url = db.Column(db.String(255), nullable=True)
+
+    package_id = db.Column(
+        db.Integer,
+        db.ForeignKey("packages.id"),
+        nullable=False
+    )
+
+    destination_id = db.Column(
+        db.Integer,
+        db.ForeignKey("destinations.id"),
+        nullable=False
+    )
 
 
 # -------------------------
-# Quick Booking (callback requests)
-# -------------------------
-class QuickBooking(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_name = db.Column(db.String(100), nullable=False)
-    contact_number = db.Column(db.String(20), nullable=False)
-    email = db.Column(db.String(120), nullable=True)
-    preferred_destinations = db.Column(db.String(255), nullable=True)  # Optional
-    notes = db.Column(db.Text, nullable=True)  # Extra message/requirements
-    preferred_time = db.Column(db.String(50), nullable=True)  # morning/evening
-    status = db.Column(db.String(20), default="pending")  # pending/contacted/closed
-
-
-# -------------------------
-# Testimonials (for homepage)
-# -------------------------
-class Testimonial(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    author = db.Column(db.String(100), nullable=False)   # e.g., “XYZ College”
-    content = db.Column(db.Text, nullable=False)
-    rating = db.Column(db.Integer)  # optional 1–5 stars
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-
-# -------------------------
-# Team Members (for homepage)
+# Team Members (Founders / Organisers / Freelancers)
 # -------------------------
 class TeamMember(db.Model):
+    __tablename__ = "team_members"
+
     id = db.Column(db.Integer, primary_key=True)
+
     name = db.Column(db.String(100), nullable=False)
-    role = db.Column(db.String(100), nullable=False)  # e.g., Tour Manager
-    photo_url = db.Column(db.String(255))
-    bio = db.Column(db.Text)  # short intro line
+
+    role = db.Column(db.String(50))
+    # founder
+    # organiser
+    # freelancer
+
+    phone = db.Column(db.String(20))
+
+    active = db.Column(db.Boolean, default=True)
+
+
+# -------------------------
+# Leads (Customer enquiries)
+# Replaces TripRequest + QuickBooking
+# -------------------------
+class Lead(db.Model):
+    __tablename__ = "leads"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    email = db.Column(db.String(120))
+
+    lead_type = db.Column(db.String(20))
+    # trip_request
+    # quick_callback
+    # package_booking
+
+    package_id = db.Column(
+        db.Integer,
+        db.ForeignKey("packages.id"),
+        nullable=True
+    )
+
+    travel_dates = db.Column(db.String(50))
+    travelers = db.Column(db.Integer)
+
+    budget = db.Column(db.String(50))
+    notes = db.Column(db.Text)
+
+    status = db.Column(db.String(20), default="pending")
+    # pending
+    # contacted
+    # confirmed
+    # completed
+
+    # Who handled the lead
+    contact_person_id = db.Column(
+        db.Integer,
+        db.ForeignKey("team_members.id")
+    )
+
+    itinerary_pdf_url = db.Column(db.String(255))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# -------------------------
+# Trip Organisers
+# (Multiple organisers per trip)
+# -------------------------
+class TripOrganizer(db.Model):
+    __tablename__ = "trip_organizers"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    lead_id = db.Column(
+        db.Integer,
+        db.ForeignKey("leads.id"),
+        nullable=False
+    )
+
+    team_member_id = db.Column(
+        db.Integer,
+        db.ForeignKey("team_members.id"),
+        nullable=False
+    )
+
+
+# -------------------------
+# Trip Finance Tracker
+# Tracks revenue, costs, and profit
+# -------------------------
+class TripFinance(db.Model):
+    __tablename__ = "trip_finance"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    lead_id = db.Column(
+        db.Integer,
+        db.ForeignKey("leads.id"),
+        nullable=False
+    )
+
+    revenue = db.Column(db.Float)
+
+    transport_cost = db.Column(db.Float)
+    hotel_cost = db.Column(db.Float)
+    food_cost = db.Column(db.Float)
+    activity_cost = db.Column(db.Float)
+    other_cost = db.Column(db.Float)
+
+    total_cost = db.Column(db.Float)
+
+    profit = db.Column(db.Float)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # -------------------------
 # Admin (for authentication)
 # -------------------------
 class Admin(db.Model):
+    __tablename__ = "admins"
+
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
+
+    email = db.Column(db.String(120), unique=True, nullable=False)
+
     password_hash = db.Column(db.String(255), nullable=False)

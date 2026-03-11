@@ -1,58 +1,62 @@
 import { useState } from "react";
+import { apiFetch } from "../config/api";
+
+const initialForm = {
+  name: "",
+  phone: "",
+  email: "",
+  destination: "",
+  travelDate: "",
+  travelers: 1,
+  budget: "",
+  notes: "",
+};
 
 const BookingForm = () => {
-  const [formData, setFormData] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    destination: "",
-    travelDate: "",
-    travelers: 1,
-    budget: "",
-    notes: "",
-  });
-
+  const [formData, setFormData] = useState(initialForm);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
   };
 
-  // ✅ THIS IS handleSubmit (this is what you were missing)
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     setLoading(true);
+    setError("");
+    setSuccess("");
+
+    const payload = {
+      name: formData.name,
+      phone: formData.phone,
+      email: formData.email,
+      lead_type: "trip_request",
+      travel_dates: formData.travelDate,
+      travelers: Number(formData.travelers) || 1,
+      budget: formData.budget,
+      notes: formData.notes,
+    };
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/plan-trip", {
+      const result = await apiFetch("/lead", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Submission failed");
-      }
-
-      alert("Your trip request has been submitted! Our team will contact you soon.");
-
-      setFormData({
-        name: "",
-        phone: "",
-        email: "",
-        destination: "",
-        travelDate: "",
-        travelers: 1,
-        budget: "",
-        notes: "",
-      });
-    } catch (error) {
-      console.error("Error submitting trip request:", error);
-      alert("Failed to submit request. Please try again later.");
+      setSuccess(`Trip request submitted successfully. Request ID: ${result.lead_id}`);
+      setFormData(initialForm);
+    } catch (err) {
+      console.error("Error submitting trip request:", err);
+      setError(err.message || "Failed to submit request. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -61,42 +65,57 @@ const BookingForm = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center items-center p-6">
       <div className="bg-white shadow-xl rounded-2xl p-8 max-w-lg w-full">
-        <h2 className="text-2xl font-bold text-center text-indigo-600 mb-6">Plan Your Trip</h2>
+        <h2 className="text-2xl font-bold text-center text-indigo-600 mb-6">
+          Plan Your Trip
+        </h2>
+
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+            {success}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
-            type="text"
             name="name"
             value={formData.name}
             onChange={handleChange}
-            placeholder="Full Name* (required)"
+            placeholder="Full Name"
             required
-            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 required"
+            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
-            type="tel"
             name="phone"
             value={formData.phone}
             onChange={handleChange}
-            placeholder="Phone Number* (required)"
+            placeholder="Phone Number"
             required
-            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 required"
+            className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
-            type="email"
             name="email"
             value={formData.email}
             onChange={handleChange}
-            placeholder="Email Address (optional)"
+            placeholder="Email (optional)"
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
-            type="text"
             name="destination"
             value={formData.destination}
             onChange={handleChange}
             placeholder="Preferred Destination"
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
             type="date"
             name="travelDate"
@@ -104,6 +123,7 @@ const BookingForm = () => {
             onChange={handleChange}
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
             type="number"
             name="travelers"
@@ -112,22 +132,24 @@ const BookingForm = () => {
             min="1"
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <input
-            type="text"
             name="budget"
             value={formData.budget}
             onChange={handleChange}
-            placeholder="Budget Range (optional)"
+            placeholder="Budget Range"
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <textarea
             name="notes"
             value={formData.notes}
             onChange={handleChange}
-            placeholder="Any additional notes..."
             rows="3"
+            placeholder="Additional notes..."
             className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500"
           />
+
           <button
             type="submit"
             disabled={loading}

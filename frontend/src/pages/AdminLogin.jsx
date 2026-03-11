@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { apiFetch } from '../config/api';
+
+const ADMIN_TOKEN_KEY = 'amigos_admin_token';
 
 const AdminLogin = () => {
+  const navigate = useNavigate();
   const [credentials, setCredentials] = useState({
-    email: "",
-    password: "",
+    email: '',
+    password: '',
   });
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   const handleChange = (e) => {
     setCredentials({
@@ -18,31 +23,26 @@ const AdminLogin = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setError('');
     setLoading(true);
 
     try {
-      // 🔒 Backend endpoint will be wired later
-      const response = await fetch("http://127.0.0.1:5000/admin/login", {
-        method: "POST",
+      const result = await apiFetch('/admin/login', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(credentials),
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Login failed");
+      if (result?.token) {
+        localStorage.setItem(ADMIN_TOKEN_KEY, result.token);
       }
 
-      // Later: store token/session
-      alert("Admin login successful");
-
+      navigate('/admin/dashboard');
     } catch (err) {
       console.error(err);
-      setError("Invalid email or password");
+      setError(err.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ const AdminLogin = () => {
             disabled={loading}
             className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-60"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
       </div>
@@ -96,3 +96,4 @@ const AdminLogin = () => {
 };
 
 export default AdminLogin;
+export { ADMIN_TOKEN_KEY };
