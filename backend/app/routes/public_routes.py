@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify, request
+from marshmallow import ValidationError
 from app.models import Destination, Package, Lead
+from app.schemas import LeadSchema
 from app import db
 
 public_bp = Blueprint('public', __name__)
@@ -74,25 +76,22 @@ def create_lead():
 
     data = request.get_json(silent=True) or {}
 
-    name = (data.get('name') or '').strip()
-    phone = (data.get('phone') or '').strip()
-
-    if not name:
-        return jsonify({"error": "Name is required"}), 400
-
-    if not phone:
-        return jsonify({"error": "Phone number is required"}), 400
+    try:
+        validated_data = LeadSchema().load(data)
+    except ValidationError as err:
+        return jsonify({"error": err.messages}), 400
 
     new_lead = Lead(
-        name=name,
-        phone=phone,
-        email=data.get("email"),
-        lead_type=data.get("lead_type", "trip_request"),
-        package_id=data.get("package_id"),
-        travel_dates=data.get("travel_dates"),
-        travelers=data.get("travelers"),
-        budget=data.get("budget"),
-        notes=data.get("notes"),
+        name=validated_data.get("name"),
+        phone=validated_data.get("phone"),
+        email=validated_data.get("email"),
+        lead_type=validated_data.get("lead_type"),
+        package_id=validated_data.get("package_id"),
+        preferred_destination=validated_data.get("preferred_destination"),
+        travel_dates=validated_data.get("travel_dates"),
+        travelers=validated_data.get("travelers"),
+        budget=validated_data.get("budget"),
+        notes=validated_data.get("notes"),
         status="pending"
     )
 

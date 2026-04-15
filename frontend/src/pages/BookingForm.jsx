@@ -37,6 +37,7 @@ const BookingForm = () => {
       phone: formData.phone,
       email: formData.email,
       lead_type: "trip_request",
+      preferred_destination: formData.destination,
       travel_dates: formData.travelDate,
       travelers: Number(formData.travelers) || 1,
       budget: formData.budget,
