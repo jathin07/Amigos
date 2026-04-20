@@ -12,20 +12,23 @@ To transform Amigos Tourism into a production-grade travel CRM and operations pl
     - [x] Update `admin_routes.py` to authenticate against the `Admin` table instead of `.env` hardcoded variables.
 - [x] **Standardize Auditing**: Add `created_at` and `updated_at` (with server-side default and on-update triggers) to all SQLAlchemy models.
 - [x] **Database Migration Strategy**: Initialize Flask-Migrate (Alembic) to handle schema changes and prepare for the move from SQLite to PostgreSQL.
-- [x] **Input Validation Layer**: Integrate Marshmallow (or Pydantic) to validate incoming JSON for Leads, Packages, and Finance entries before they hit the database.
+- [x] **Input Validation Layer**: Integrate Marshmallow schemas for ALL models (Leads, Packages, Finance, Customers, Bookings, Tasks) to validate incoming JSON.
 
 ---
 
 ## Phase 2: CRM Core Expansion (Operations)
 *Goal: Implement the Lead-to-Booking lifecycle and task assignments.*
-- [x] **Lead Conversion Logic**: Create a `POST /admin/lead/<id>/convert` endpoint that:
-    - [x] Creates a `Customer` record.
+- [x] **Lead Conversion Logic**: Robust `POST /admin/lead/<id>/convert` endpoint that:
+    - [x] Checks for existing customers by phone/email to prevent duplication.
     - [x] Creates a `Booking` linked to the connected `Lead` and `Customer`.
+    - [x] Maps travel dates from frontend modal to booking record.
     - [x] Sets `Lead` status to `Confirmed`.
+    - [x] **Automation**: Automatically generates a "Review Itinerary" task upon successful conversion.
 - [x] **Task Management System (Operations)**:
     - [x] Build API and UI for the `Task` model to track granular operations (e.g., "Book Hotel," "Send Itinerary") linked to specific Leads.
 - [x] **Enhanced Admin Dashboard UI**:
-    - [x] Implement the "Convert to Booking" button directly inside the Leads table.
+    - [x] Fixed conversion button visibility (shows for pending/contacted leads).
+    - [x] Replaced primitive `prompt()` with a **Conversion Modal** to capture price and specific trip dates.
 
 ---
 
@@ -79,4 +82,3 @@ To transform Amigos Tourism into a production-grade travel CRM and operations pl
 - [x] Destinations Catalog Management (CRUD).
 - [x] Staff Management & Lead Handling Assignments. 
 - [x] Basic Trip Financial Logging inside `AdminFinance.jsx`.
-

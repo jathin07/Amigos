@@ -38,3 +38,20 @@ class TaskSchema(Schema):
     description = fields.String(required=True)
     due_date = fields.String(allow_none=True)
     status = fields.String(validate=validate.OneOf(["pending", "in_progress", "completed"]), load_default="pending")
+
+class CustomerSchema(Schema):
+    name = fields.String(required=True, validate=validate.Length(min=1, max=100))
+    email = fields.Email(allow_none=True)
+    phone = fields.String(required=True, validate=validate.Length(min=5, max=20))
+    secondary_contact = fields.String(allow_none=True, validate=validate.Length(max=20))
+    address = fields.String(allow_none=True)
+    preferences = fields.String(allow_none=True)
+
+class BookingSchema(Schema):
+    lead_id = fields.Integer(allow_none=True)
+    customer_id = fields.Integer(required=True)
+    package_id = fields.Integer(allow_none=True)
+    start_date = fields.String(allow_none=True)
+    end_date = fields.String(allow_none=True)
+    total_price = fields.Float(allow_none=True, validate=validate.Range(min=0))
+    status = fields.String(validate=validate.OneOf(["pending", "confirmed", "completed", "cancelled"]), load_default="pending")

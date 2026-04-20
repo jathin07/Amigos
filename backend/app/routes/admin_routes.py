@@ -1,11 +1,12 @@
+from datetime import datetime
 from functools import wraps
 from flask import Blueprint, current_app, jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from marshmallow import ValidationError
 
 from app import db
-from app.models import Package, Lead, TeamMember, TripFinance, PackageDestination, Destination, Task
-from app.schemas import PackageSchema, TripFinanceSchema, TaskSchema
+from app.models import Package, Lead, TeamMember, TripFinance, PackageDestination, Destination, Task, Customer
+from app.schemas import PackageSchema, TripFinanceSchema, TaskSchema, CustomerSchema
 
 admin_bp = Blueprint("admin", __name__)
 
