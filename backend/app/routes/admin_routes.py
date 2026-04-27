@@ -3,6 +3,7 @@ from functools import wraps
 from flask import Blueprint, current_app, jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from marshmallow import ValidationError
+from app.exceptions import ValidationException, Unauthorized
 
 from app import db
 from app.models import Package, Lead, TeamMember, TripFinance, PackageDestination, Destination, Task, Customer
@@ -37,14 +38,14 @@ def admin_required(view_func):
         token = parts[1].strip() if len(parts) == 2 else ""
 
         if not token:
-            return jsonify({"error": "Missing admin token"}), 401
+            raise Unauthorized("Missing admin token")
 
         try:
             _verify_token(token)
         except SignatureExpired:
-            return jsonify({"error": "Token expired"}), 401
+            raise Unauthorized("Token expired")
         except BadSignature:
-            return jsonify({"error": "Invalid token"}), 401
+            raise Unauthorized("Invalid token")
 
         return view_func(*args, **kwargs)
 
@@ -74,7 +75,7 @@ def admin_login():
             "token": token
         })
 
-    return jsonify({"error": "Invalid credentials"}), 401
+    raise Unauthorized("Invalid credentials")
 
 
 # -------------------------
@@ -138,7 +139,7 @@ def convert_lead_to_booking(lead_id):
     lead = Lead.query.get_or_404(lead_id)
 
     if lead.status == "confirmed":
-        return jsonify({"error": "Lead is already confirmed"}), 400
+        raise ValidationException("Lead is already confirmed")
 
     data = request.get_json() or {}
 
@@ -250,7 +251,7 @@ def create_package():
     try:
         validated_data = PackageSchema().load(data)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     pkg = Package(
         title=validated_data.get("title"),
@@ -287,7 +288,7 @@ def update_package(package_id):
     try:
         validated_data = PackageSchema().load(data)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     pkg.title = validated_data.get("title", pkg.title)
     pkg.description = validated_data.get("description", pkg.description)
@@ -489,7 +490,7 @@ def add_finance():
     try:
         validated_data = TripFinanceSchema().load(data)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     revenue = float(validated_data.get("revenue", 0))
     transport = float(validated_data.get("transport_cost", 0))
@@ -527,7 +528,7 @@ def update_finance(id):
     try:
         validated_data = TripFinanceSchema().load(data, partial=True)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     finance.revenue = float(validated_data.get("revenue", finance.revenue))
     finance.transport_cost = float(validated_data.get("transport_cost", finance.transport_cost))
@@ -586,7 +587,7 @@ def create_task():
     try:
         validated_data = TaskSchema().load(data)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     # Parse due_date string to datetime
     due_date = None
@@ -622,7 +623,7 @@ def update_task(id):
     try:
         validated_data = TaskSchema().load(data, partial=True)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     task.assigned_to_id = validated_data.get("assigned_to_id", task.assigned_to_id)
     task.linked_lead_id = validated_data.get("linked_lead_id", task.linked_lead_id)

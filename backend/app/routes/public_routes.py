@@ -3,6 +3,7 @@ from marshmallow import ValidationError
 from app.models import Destination, Package, Lead
 from app.schemas import LeadSchema
 from app import db
+from app.exceptions import ValidationException, DatabaseException
 
 public_bp = Blueprint('public', __name__)
 
@@ -79,7 +80,7 @@ def create_lead():
     try:
         validated_data = LeadSchema().load(data)
     except ValidationError as err:
-        return jsonify({"error": err.messages}), 400
+        raise ValidationException("Validation failed", payload=err.messages)
 
     new_lead = Lead(
         name=validated_data.get("name"),
@@ -101,9 +102,31 @@ def create_lead():
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        raise DatabaseException(str(e))
 
     return jsonify({
         "message": "Lead submitted successfully",
         "lead_id": new_lead.id
     }), 201
+
+
+# -------------------------
+# AI Notes Analysis
+# -------------------------
+@public_bp.route('/ai/analyze-notes', methods=['POST'])
+def analyze_notes():
+    from app.utils.ai_handler import analyze_notes_with_ai
+
+    data = request.get_json(silent=True) or {}
+    notes = data.get('notes', '')
+
+    if len(notes) < 10:
+        return jsonify({"suggestion": ""}), 200
+
+    try:
+        suggestion = analyze_notes_with_ai(notes)
+        return jsonify({"suggestion": suggestion}), 200
+    except Exception as e:
+        # Fail gracefully without breaking the user experience
+        print(f"AI Route Error: {e}")
+        return jsonify({"suggestion": ""}), 200

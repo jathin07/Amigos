@@ -31,4 +31,23 @@ def create_app():
     app.register_blueprint(public_bp)
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
+    from .exceptions import APIException
+    from flask import jsonify
+
+    from werkzeug.exceptions import HTTPException
+
+    @app.errorhandler(APIException)
+    def handle_api_exception(error):
+        response = jsonify(error.to_dict())
+        response.status_code = error.status_code
+        return response
+
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(error):
+        return jsonify({"error": error.description}), error.code
+
+    @app.errorhandler(Exception)
+    def handle_generic_exception(error):
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
     return app
