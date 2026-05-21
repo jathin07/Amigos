@@ -81,17 +81,17 @@ const PackageCard = ({
         </div>
 
         {/* Actions */}
-        <div className="mt-6 flex gap-3 pt-2 border-t border-gray-100">
+        <div className="mt-6 flex gap-2 sm:gap-3 pt-3 sm:pt-2 border-t border-gray-100">
           {isExpandable && (
             <button
               onClick={onToggle}
-              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900 transition-colors duration-200"
+              className="flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-semibold text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900 transition-colors duration-200 whitespace-nowrap"
             >
               {expanded ? "Close" : "View Highlights"}
             </button>
           )}
 
-          <button className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 group/btn">
+          <button className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 group/btn whitespace-nowrap">
             Plan Now
             <span className="group-hover/btn:translate-x-1 transition-transform">→</span>
           </button>

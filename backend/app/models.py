@@ -9,6 +9,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 class Destination(db.Model):
     __tablename__ = "destinations"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     state = db.Column(db.String(100))
@@ -30,6 +33,9 @@ class Destination(db.Model):
 # -------------------------
 class Package(db.Model):
     __tablename__ = "packages"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(150), nullable=False)
@@ -60,6 +66,9 @@ class Package(db.Model):
 class PackageDestination(db.Model):
     __tablename__ = "package_destinations"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
 
     package_id = db.Column(
@@ -84,6 +93,9 @@ class PackageDestination(db.Model):
 class TeamMember(db.Model):
     __tablename__ = "team_members"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
 
     name = db.Column(db.String(100), nullable=False)
@@ -107,6 +119,9 @@ class TeamMember(db.Model):
 # -------------------------
 class Lead(db.Model):
     __tablename__ = "leads"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -158,6 +173,9 @@ class Lead(db.Model):
 class TripOrganizer(db.Model):
     __tablename__ = "trip_organizers"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
 
     lead_id = db.Column(
@@ -182,6 +200,9 @@ class TripOrganizer(db.Model):
 # -------------------------
 class TripFinance(db.Model):
     __tablename__ = "trip_finance"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -213,6 +234,9 @@ class TripFinance(db.Model):
 class Admin(db.Model):
     __tablename__ = "admins"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
 
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -235,6 +259,9 @@ class Admin(db.Model):
 class Customer(db.Model):
     __tablename__ = "customers"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120))
@@ -252,6 +279,9 @@ class Customer(db.Model):
 # -------------------------
 class Booking(db.Model):
     __tablename__ = "bookings"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -274,6 +304,9 @@ class Booking(db.Model):
 class Traveler(db.Model):
     __tablename__ = "travelers"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
     
     booking_id = db.Column(db.Integer, db.ForeignKey("bookings.id"), nullable=False)
@@ -294,6 +327,9 @@ class Traveler(db.Model):
 class Payment(db.Model):
     __tablename__ = "payments"
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     id = db.Column(db.Integer, primary_key=True)
 
     booking_id = db.Column(db.Integer, db.ForeignKey("bookings.id"), nullable=False)
@@ -313,6 +349,9 @@ class Payment(db.Model):
 # -------------------------
 class Task(db.Model):
     __tablename__ = "tasks"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     id = db.Column(db.Integer, primary_key=True)
 
