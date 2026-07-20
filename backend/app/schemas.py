@@ -23,15 +23,6 @@ class PackageSchema(Schema):
     highlights = fields.String(allow_none=True)
     destination_ids = fields.List(fields.Integer(), allow_none=True)
 
-class TripFinanceSchema(Schema):
-    lead_id = fields.Integer(required=True)
-    revenue = fields.Float(allow_none=True, load_default=0.0)
-    transport_cost = fields.Float(allow_none=True, load_default=0.0)
-    hotel_cost = fields.Float(allow_none=True, load_default=0.0)
-    food_cost = fields.Float(allow_none=True, load_default=0.0)
-    activity_cost = fields.Float(allow_none=True, load_default=0.0)
-    other_cost = fields.Float(allow_none=True, load_default=0.0)
-
 class TaskSchema(Schema):
     assigned_to_id = fields.Integer(allow_none=True)
     linked_lead_id = fields.Integer(allow_none=True)

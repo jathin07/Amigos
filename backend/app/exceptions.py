@@ -9,7 +9,7 @@ class APIException(Exception):
             self.status_code = status_code
         self.payload = payload
 
-    def to_dict(self):
+    def to_d1ict(self):
         rv = dict(self.payload or ())
         rv['error'] = self.message
         return rv

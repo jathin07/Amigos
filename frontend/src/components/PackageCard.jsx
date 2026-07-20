@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 const PackageCard = ({
   packageData,
@@ -17,7 +18,7 @@ const PackageCard = ({
     <div className={`bg-white shadow-lg rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl group flex flex-col h-full ${expanded ? 'ring-2 ring-blue-100' : ''}`}>
 
       {/* Image Container with 16:9 Aspect Ratio */}
-      <div className="relative w-full aspect-video overflow-hidden">
+      <Link to={`/packages/${packageData.id}`} className="relative w-full aspect-video overflow-hidden block">
         <img
           src={packageData.image}
           alt={packageData.name}
@@ -38,15 +39,17 @@ const PackageCard = ({
             <span>IV INCLUDED</span>
           </div>
         )}
-      </div>
+      </Link>
 
       {/* Content */}
       <div className="p-5 flex flex-col flex-grow">
         <div className="flex-grow">
           <div className="flex justify-between items-start mb-2">
-            <h3 className="text-lg font-bold text-gray-900 leading-tight group-hover:text-blue-600 transition-colors">
-              {packageData.name}
-            </h3>
+            <Link to={`/packages/${packageData.id}`} className="hover:text-blue-600 transition-colors">
+              <h3 className="text-lg font-bold text-gray-900 leading-tight group-hover:text-blue-600 transition-colors">
+                {packageData.name}
+              </h3>
+            </Link>
           </div>
 
           <p className="text-gray-600 text-sm mb-4 line-clamp-3">
@@ -91,10 +94,13 @@ const PackageCard = ({
             </button>
           )}
 
-          <button className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 group/btn whitespace-nowrap">
-            Plan Now
+          <Link 
+            to={`/packages/${packageData.id}`}
+            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 group/btn whitespace-nowrap text-center"
+          >
+            Explore Trip
             <span className="group-hover/btn:translate-x-1 transition-transform">→</span>
-          </button>
+          </Link>
         </div>
       </div>
     </div>
