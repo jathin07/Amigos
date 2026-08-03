@@ -1,0 +1,38 @@
+{
+  "name": "multi_replace_file_content",
+  "args": {
+    "ArtifactMetadata": {
+      "RequestFeedback": true,
+      "Summary": "Added Phase 0.5 for Shared Domain Objects and added Seed Data steps after each entity.",
+      "UserFacing": true
+    },
+    "Description": "Updating implementation plan based on user feedback to add Phase 0.5 (Shared Domain Objects) and Seed Data.",
+    "Instruction": "Add Phase 0.5 and Seed Data requirements to the implementation plan.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 18,
+        "ReplacementContent": "### Phase 0 \u2013 Shared Infrastructure\nBuild the core architecture that all 13 entities will share. We will check existing domain objects (like `models.py` mixins, `responses.py`) and either reuse, update, or supersede them to perfectly match the `03_master_dtos.md` contract.\n- **`BaseModel`** (`app/core/base_model.py`): A shared SQLAlchemy mixin containing `id` (UUID v4), `created_at`, `updated_at`, `created_by` (UUID string), `updated_by` (UUID string), `version` (Integer), and `is_active` (Boolean). This supersedes older mixins that used `created_by_team_member_id`.\n- **`BaseRepository`** (`app/core/base_repository.py`): Expand the existing generic repository to natively support `apply_search()`, `apply_sort()`, `apply_filters()`, `apply_pagination()`.\n- **`BaseService`** (`app/core/base_service.py`): A minimal service containing transaction helpers (`commit`, `rollback`), common logging, pagination, and response/optimistic locking helpers.\n\n### Phase 0.5 \u2013 Shared Domain Objects\nBefore touching the first entity, we will ensure the following shared directory structure and files exist and are fully implemented:\n- `app/core/base_model.py`, `app/core/base_repository.py`, `app/core/base_service.py`\n- `app/common/pagination.py`, `app/common/filters.py`, `app/common/search.py`, `app/common/sorting.py`\n- `app/domain/exceptions/business.py`, `app/domain/exceptions/validation.py`, `app/domain/exceptions/not_found.py` (updating/expanding the existing `exceptions.py`)\n- `app/infrastructure/responses/api_response.py` (creating a strict `{success, message, data/errors}` envelope to replace the older `responses.py`)\n- `app/validators/common.py` (for `validate_code`, `validate_slug`, `validate_fk`)",
+        "StartLine": 7,
+        "TargetContent": "### Phase 0 \u2013 Shared Infrastructure\nBuild the core architecture that all 13 entities will share:\n- **`BaseModel`**: A shared SQLAlchemy mixin containing `id` (UUID), `created_at`, `updated_at`, `created_by`, `updated_by`, `version`, and `is_active`.\n- **`BaseRepository`**: Expand the existing generic repository to natively support `apply_search()`, `apply_sort()`, `apply_filters()`, `apply_pagination()`. This way, individual repositories only need to define `searchable_fields`, `filterable_fields`, etc.\n- **`BaseService`**: A minimal service containing transaction helpers (`commit`, `rollback`), common logging, pagination, and response/optimistic locking helpers. (Business validation remains inside entity-specific services).\n- **`Response Utilities`**: Refactor `app/infrastructure/responses/responses.py` to strictly return `{ success, message, data/errors }`.\n- **Validation Helpers & Exception Hierarchy**: Setup utilities for standard validations (`validate_code`, `validate_slug`, `validate_fk`) and error throwing."
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 32,
+        "ReplacementContent": "- **Tests**: Exhaustive test suites including Optimistic Locking (409 Conflict) and Soft Deletes.\n- **Alembic Migrations**.\n- **Seed Data**: Create a seed script (e.g., `seed_countries.py`, `seed_states.py`) for each foundation master with realistic data to aid frontend development.",
+        "StartLine": 31,
+        "TargetContent": "- **Tests**: Exhaustive test suites including Optimistic Locking (409 Conflict) and Soft Deletes.\n- **Alembic Migrations**."
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 45,
+        "ReplacementContent": "- Cancellation Policy\n- Tax Configuration\n\n*Note: After completing each independent master, we will also create and run a seed script (e.g., `seed_currencies.py` with INR, USD, EUR, AED; `seed_payment_methods.py` with UPI, Cash, Card, Bank Transfer) to populate realistic reference data.*",
+        "StartLine": 44,
+        "TargetContent": "- Cancellation Policy\n- Tax Configuration"
+      }
+    ],
+    "TargetFile": "C:\\Users\\jathi\\.gemini\\antigravity\\brain\\a0ea7b2c-aae1-4fd0-a847-3dce5e2dfa69\\implementation_plan.md",
+    "toolAction": "Updating implementation plan",
+    "toolSummary": "Update implementation plan"
+  }
+}

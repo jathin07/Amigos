@@ -1,9 +1,12 @@
 import uuid
 from datetime import datetime
-from . import db
+from app.core.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.orm import declared_attr
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
+
+CustomJSON = JSON().with_variant(JSONB, 'postgresql')
 
 # -------------------------
 # Mixins
@@ -13,8 +16,12 @@ class BaseMixin:
     pass
 
 class TimestampMixin(BaseMixin):
-    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    @declared_attr
+    def created_at(cls):
+        return db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    @declared_attr
+    def updated_at(cls):
+        return db.Column(db.DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 class AuditMixin(BaseMixin):
     @declared_attr
@@ -26,8 +33,12 @@ class AuditMixin(BaseMixin):
         return db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
 
 class SoftDeleteMixin(BaseMixin):
-    is_deleted = db.Column(db.Boolean, default=False, nullable=False)
-    deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    @declared_attr
+    def is_deleted(cls):
+        return db.Column(db.Boolean, default=False, nullable=False)
+    @declared_attr
+    def deleted_at(cls):
+        return db.Column(db.DateTime(timezone=True), nullable=True)
     
     @declared_attr
     def deleted_by_team_member_id(cls):
@@ -39,15 +50,24 @@ class OwnershipMixin(BaseMixin):
         return db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
 
 class LookupMixin:
-    id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code = db.Column(db.String(50), nullable=False, unique=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text)
-    display_order = db.Column(db.Integer, default=0)
-    color = db.Column(db.String(30))
-    icon = db.Column(db.String(50))
-    is_system = db.Column(db.Boolean, default=False, nullable=False)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    @declared_attr
+    def id(cls): return db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    @declared_attr
+    def code(cls): return db.Column(db.String(50), nullable=False, unique=True)
+    @declared_attr
+    def name(cls): return db.Column(db.String(100), nullable=False)
+    @declared_attr
+    def description(cls): return db.Column(db.Text)
+    @declared_attr
+    def display_order(cls): return db.Column(db.Integer, default=0)
+    @declared_attr
+    def color(cls): return db.Column(db.String(30))
+    @declared_attr
+    def icon(cls): return db.Column(db.String(50))
+    @declared_attr
+    def is_system(cls): return db.Column(db.Boolean, default=False, nullable=False)
+    @declared_attr
+    def is_active(cls): return db.Column(db.Boolean, default=True, nullable=False)
 
 
 # -------------------------
@@ -144,7 +164,7 @@ class SystemSetting(db.Model, TimestampMixin, AuditMixin):
     __tablename__ = "system_settings"
     id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     key = db.Column(db.String(100), nullable=False, unique=True)
-    value = db.Column(JSONB, nullable=False)
+    value = db.Column(CustomJSON, nullable=False)
     description = db.Column(db.Text)
 
 class Organization(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
@@ -210,6 +230,7 @@ class Vendor(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     verified_at = db.Column(db.DateTime(timezone=True))
     notes = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    version = db.Column(db.Integer, default=1, nullable=False)
 
 class Destination(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     __tablename__ = "destinations"
@@ -222,7 +243,7 @@ class Destination(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     description = db.Column(db.Text)
     thumbnail_url = db.Column(db.Text)
     best_season = db.Column(db.String(100))
-    tags = db.Column(JSONB)
+    tags = db.Column(CustomJSON)
     latitude = db.Column(db.Numeric(12, 6))
     longitude = db.Column(db.Numeric(12, 6))
     is_active = db.Column(db.Boolean, default=True, nullable=False)
@@ -251,6 +272,7 @@ class Package(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     terms = db.Column(db.Text)
     is_featured = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    version = db.Column(db.Integer, nullable=False, default=1)
 
     images = db.relationship("PackageImage", backref="package", cascade="all, delete-orphan", lazy=True)
     highlights = db.relationship("PackageHighlight", backref="package", cascade="all, delete-orphan", lazy=True)
@@ -328,13 +350,14 @@ class TeamMember(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     joined_date = db.Column(db.Date)
     left_date = db.Column(db.Date)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    version = db.Column(db.Integer, default=1, nullable=False)
 
     emergency_contact_name = db.Column(db.String(150))
     emergency_contact_phone = db.Column(db.String(20))
 
     role = db.relationship("Role")
     department = db.relationship("Department")
-    manager = db.relationship("TeamMember", remote_side=[id])
+    manager = db.relationship("TeamMember", remote_side=[id], foreign_keys=[reporting_manager_id])
     user_account = db.relationship("UserAccount", backref="team_member", uselist=False, lazy=True)
 
 
@@ -364,6 +387,9 @@ class UserAccount(db.Model, TimestampMixin):
     locked_until = db.Column(db.DateTime(timezone=True))
     is_email_verified = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    
+    reset_token_hash = db.Column(db.String(255))
+    reset_token_expires_at = db.Column(db.DateTime(timezone=True))
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -453,6 +479,7 @@ class Lead(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin, OwnershipMixin
     expected_travel_date = db.Column(db.Date)
     lost_reason_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("lead_lost_reasons.id", ondelete="RESTRICT"), nullable=True)
     lost_date = db.Column(db.Date)
+    version = db.Column(db.Integer, nullable=False, default=1)
 
     lead_destinations = db.relationship("LeadDestination", backref="lead", cascade="all, delete-orphan", lazy=True)
     activities = db.relationship("CRMActivity", backref="lead", cascade="all, delete-orphan", lazy=True)
@@ -460,6 +487,14 @@ class Lead(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin, OwnershipMixin
     proposals = db.relationship("Proposal", backref="lead", cascade="all, delete-orphan", lazy=True)
     booking = db.relationship("Booking", backref="lead", uselist=False, lazy=True)
     documents = db.relationship("Document", backref="lead", foreign_keys="[Document.lead_id]", cascade="all, delete-orphan", lazy=True)
+
+    contact_person = db.relationship("ContactPerson", foreign_keys=[contact_person_id], lazy=True)
+    current_status = db.relationship("LeadStatus", foreign_keys=[current_status_id], lazy=True)
+    lead_source = db.relationship("LeadSource", foreign_keys=[lead_source_id], lazy=True)
+    priority = db.relationship("LeadPriority", foreign_keys=[priority_id], lazy=True)
+    trip_type = db.relationship("TripType", foreign_keys=[trip_type_id], lazy=True)
+    lost_reason = db.relationship("LeadLostReason", foreign_keys=[lost_reason_id], lazy=True)
+    package = db.relationship("Package", foreign_keys=[package_id], lazy=True)
 
     __table_args__ = (
         db.Index("idx_lead_number", "lead_number", unique=True),
@@ -477,6 +512,8 @@ class LeadDestination(db.Model):
     priority = db.Column(db.String(50))
     day_preference = db.Column(db.String(50))
 
+    destination = db.relationship(Destination, foreign_keys=[destination_id], lazy=True)
+
 class CRMActivity(db.Model, TimestampMixin, AuditMixin):
     __tablename__ = "crm_activities"
     id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -488,7 +525,9 @@ class CRMActivity(db.Model, TimestampMixin, AuditMixin):
     next_action = db.Column(db.Text)
     next_followup_date = db.Column(db.Date)
 
-class FollowUp(db.Model, TimestampMixin, AuditMixin, OwnershipMixin):
+    activity_type = db.relationship("CRMActivityType", foreign_keys=[activity_type_id], lazy=True)
+
+class FollowUp(db.Model, TimestampMixin, AuditMixin, OwnershipMixin, SoftDeleteMixin):
     __tablename__ = "follow_ups"
     id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     lead_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
@@ -497,6 +536,8 @@ class FollowUp(db.Model, TimestampMixin, AuditMixin, OwnershipMixin):
     notes = db.Column(db.Text)
     is_completed = db.Column(db.Boolean, default=False, nullable=False)
     completed_at = db.Column(db.DateTime(timezone=True))
+
+    followup_type = db.relationship("FollowUpType", foreign_keys=[followup_type_id], lazy=True)
 
 
 # -------------------------
@@ -514,7 +555,7 @@ class Proposal(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     total_amount = db.Column(db.Numeric(12, 2))
     pdf_url = db.Column(db.Text)
     internal_notes = db.Column(db.Text)
-    structured_itinerary = db.Column(JSONB)
+    structured_itinerary = db.Column(CustomJSON)
     revision_reason = db.Column(db.Text)
     sent_date = db.Column(db.Date)
     approved_date = db.Column(db.Date)
@@ -523,11 +564,19 @@ class Proposal(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin):
     is_final = db.Column(db.Boolean, default=False, nullable=False)
     status_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("proposal_statuses.id", ondelete="RESTRICT"), nullable=False)
     
+    status = db.relationship("ProposalStatus", foreign_keys=[status_id], lazy=True)
+    approved_by = db.relationship("TeamMember", foreign_keys=[approved_by_team_member_id], lazy=True)
     destinations = db.relationship("ProposalDestination", backref="proposal", cascade="all, delete-orphan", lazy=True)
 
     __table_args__ = (
         db.UniqueConstraint("lead_id", "version", name="uq_proposal_lead_version"),
-        db.Index("uq_proposal_lead_final", "lead_id", unique=True, postgresql_where=(db.column('is_final') == True))
+        db.Index(
+            "uq_proposal_lead_final",
+            "lead_id",
+            unique=True,
+            sqlite_where=(db.column('is_final') == True),
+            postgresql_where=(db.column('is_final') == True)
+        )
     )
 
 class ProposalDestination(db.Model):
@@ -544,6 +593,9 @@ class ProposalDestination(db.Model):
     travel_mode = db.Column(db.String(100))
     distance = db.Column(db.Numeric(12, 2))
     notes = db.Column(db.Text)
+
+    destination = db.relationship(Destination, foreign_keys=[destination_id], lazy=True)
+
 
 
 # -------------------------
@@ -603,6 +655,11 @@ class Booking(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin, OwnershipMi
     status_history = db.relationship("BookingStatusHistory", backref="booking", cascade="all, delete-orphan", lazy=True)
     refunds = db.relationship("Refund", backref="booking", cascade="all, delete-orphan", lazy=True)
     previous_booking = db.relationship("Booking", remote_side=[id], backref=db.backref("next_bookings", lazy=True))
+
+    status = db.relationship("BookingStatus", foreign_keys=[booking_status_id], lazy=True)
+    booking_source = db.relationship("BookingSource", foreign_keys=[booking_source_id], lazy=True)
+    booking_type = db.relationship("BookingType", foreign_keys=[booking_type_id], lazy=True)
+    trip_coordinator = db.relationship("TeamMember", foreign_keys=[trip_coordinator_team_member_id], lazy=True)
 
     __table_args__ = (
         db.CheckConstraint("trip_end_date >= trip_start_date", name="chk_booking_trip_dates"),
@@ -682,6 +739,8 @@ class Document(db.Model, TimestampMixin, AuditMixin):
     storage_provider = db.Column(db.String(50))
     storage_key = db.Column(db.String(255))
 
+    document_type = db.relationship("DocumentType", foreign_keys=[document_type_id], lazy=True)
+
     __table_args__ = (
         db.CheckConstraint(
             "(CASE WHEN booking_id IS NULL THEN 0 ELSE 1 END + "
@@ -702,6 +761,10 @@ class BookingStatusHistory(db.Model, TimestampMixin, AuditMixin):
     changed_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
     notes = db.Column(db.Text)
 
+    from_status = db.relationship("BookingStatus", foreign_keys=[from_status_id], lazy=True)
+    to_status = db.relationship("BookingStatus", foreign_keys=[to_status_id], lazy=True)
+    changed_by = db.relationship("TeamMember", foreign_keys=[changed_by_team_member_id], lazy=True)
+
 class PaymentSchedule(db.Model, TimestampMixin, AuditMixin):
     __tablename__ = "payment_schedules"
     id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -712,6 +775,8 @@ class PaymentSchedule(db.Model, TimestampMixin, AuditMixin):
     percentage = db.Column(db.Numeric(5, 2))
     payment_status_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("payment_statuses.id", ondelete="RESTRICT"), nullable=False)
     remarks = db.Column(db.Text)
+
+    payment_status = db.relationship("PaymentStatus", foreign_keys=[payment_status_id], lazy=True)
 
     __table_args__ = (
         db.CheckConstraint("amount > 0", name="chk_payment_schedule_amount"),
@@ -779,7 +844,7 @@ class VendorAllocation(db.Model, TimestampMixin, AuditMixin, OwnershipMixin):
     vendor_name_snapshot = db.Column(db.String(150))
     vendor_phone_snapshot = db.Column(db.String(20))
     vendor_address_snapshot = db.Column(db.Text)
-    vendor_service_snapshot = db.Column(JSONB)
+    vendor_service_snapshot = db.Column(CustomJSON)
     allocation_status_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("vendor_allocation_statuses.id", ondelete="RESTRICT"), nullable=False)
     confirmed_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
     confirmed_at = db.Column(db.DateTime(timezone=True))
@@ -943,6 +1008,9 @@ class AssignmentHistory(db.Model, TimestampMixin, AuditMixin):
     effective_to = db.Column(db.DateTime(timezone=True))
     entity_status = db.Column(db.String(50))
 
+    previous_team_member = db.relationship("TeamMember", foreign_keys=[previous_team_member_id], lazy=True)
+    new_team_member = db.relationship("TeamMember", foreign_keys=[new_team_member_id], lazy=True)
+
 
 # -------------------------
 # Notification Module
@@ -974,9 +1042,26 @@ class AuditLog(db.Model, TimestampMixin):
     action = db.Column(db.String(100), nullable=False)
     table_name = db.Column(db.String(100), nullable=False)
     entity_id = db.Column(db.Uuid(as_uuid=True), nullable=False)
-    old_values = db.Column(JSONB)
-    new_values = db.Column(JSONB)
+    old_values = db.Column(CustomJSON)
+    new_values = db.Column(CustomJSON)
     ip_address = db.Column(db.String(45))
     request_id = db.Column(db.String(100))
     endpoint = db.Column(db.String(255))
     http_method = db.Column(db.String(10))
+ 
+# Phase 1: Foundation Masters
+from app.modules.master.destination.models import Destination
+from app.modules.master.city.models import City
+from app.modules.master.models import (
+    PackageCategory,
+    HotelCategory,
+    MealPlan,
+    VehicleType,
+    ActivityType,
+    Season,
+    PaymentMethod,
+    Currency,
+    CancellationPolicy,
+    TaxConfiguration,
+)
+

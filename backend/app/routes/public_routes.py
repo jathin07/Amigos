@@ -2,7 +2,8 @@ from flask import Blueprint, jsonify, request, current_app
 from marshmallow import ValidationError
 from app.models import Destination, Package, Lead
 from app.schemas import LeadSchema
-from app import db, cache
+from app import cache
+from app.core.extensions import db
 from app.exceptions import ValidationException, DatabaseException
 import requests
 import os
@@ -78,6 +79,11 @@ def get_packages():
 # -------------------------
 @public_bp.route('/lead', methods=['POST'])
 def create_lead():
+    import uuid
+    import re
+    from sqlalchemy import select, func
+    from app.models import LeadSource, Destination
+    from app.modules.crm.service import CRMService
 
     data = request.get_json(silent=True) or {}
 
@@ -86,31 +92,77 @@ def create_lead():
     except ValidationError as err:
         raise ValidationException("Validation failed", payload=err.messages)
 
-    new_lead = Lead(
-        name=validated_data.get("name"),
-        phone=validated_data.get("phone"),
-        email=validated_data.get("email"),
-        lead_type=validated_data.get("lead_type"),
-        package_id=validated_data.get("package_id"),
-        preferred_destination=validated_data.get("preferred_destination"),
-        travel_dates=validated_data.get("travel_dates"),
-        travelers=validated_data.get("travelers"),
-        budget=validated_data.get("budget"),
-        notes=validated_data.get("notes"),
-        status="pending"
-    )
+    # Adapt flat JSON payload to nested CRM DTO structure
+    contact_person = {
+        "name": validated_data.get("name"),
+        "phone": validated_data.get("phone"),
+        "email": validated_data.get("email")
+    }
+
+    source_code = (validated_data.get("lead_type") or "trip_request").upper()
+    source = db.session.execute(select(LeadSource).where(LeadSource.code == source_code)).scalars().first()
+    if not source:
+        source = LeadSource(code=source_code, name=source_code.replace("_", " ").title(), is_active=True)
+        db.session.add(source)
+        db.session.flush()
+    lead_source_id = source.id
+
+    pkg_id = validated_data.get("package_id")
+    if pkg_id:
+        try:
+            uuid.UUID(str(pkg_id))
+        except ValueError:
+            pkg_id = None
+
+    notes = validated_data.get("notes") or ""
+    destinations_payload = []
+    dest_name = validated_data.get("preferred_destination")
+    if dest_name:
+        dest = db.session.execute(
+            select(Destination).where(func.lower(Destination.name) == dest_name.lower())
+        ).scalars().first()
+        if dest:
+            destinations_payload.append({
+                "destination_id": dest.id,
+                "priority": "High"
+            })
+        else:
+            notes = f"{notes}\n[Preferred Destination]: {dest_name}".strip()
+
+    travel_dates = validated_data.get("travel_dates")
+    if travel_dates:
+        notes = f"{notes}\n[Expected Travel Dates]: {travel_dates}".strip()
+
+    budget_str = validated_data.get("budget")
+    budget_val = None
+    if budget_str:
+        try:
+            cleaned = re.sub(r"[^\d.]", "", budget_str)
+            if cleaned:
+                budget_val = float(cleaned)
+        except Exception:
+            notes = f"{notes}\n[Client Budget]: {budget_str}".strip()
+
+    lead_payload = {
+        "contact_person": contact_person,
+        "lead_source_id": lead_source_id,
+        "package_id": pkg_id,
+        "traveler_count": validated_data.get("travelers") or 1,
+        "budget": budget_val,
+        "notes": notes,
+        "destinations": destinations_payload
+    }
 
     try:
-        db.session.add(new_lead)
-        db.session.commit()
-
+        crm_service = CRMService()
+        new_lead = crm_service.create_lead(lead_payload)
     except Exception as e:
         db.session.rollback()
         raise DatabaseException(str(e))
 
     return jsonify({
         "message": "Lead submitted successfully",
-        "lead_id": new_lead.id
+        "lead_id": str(new_lead.id)
     }), 201
 
 

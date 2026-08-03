@@ -12,7 +12,7 @@ The Authentication module is responsible for:
 - Password resets workflows, password changes, and refresh token blacklisting.
 - Role and permission retrieval and authorization middleware integration.
 
-*Note: This module does not manage Team Member profile edits or role re-assignments. Those belong to the Master module.*
+*Note: This module does not manage Team Member profile edits or role re-assignments. Those belong to the Team module.*
 
 ---
 

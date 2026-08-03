@@ -6,326 +6,27 @@ from marshmallow import ValidationError
 from app.exceptions import ValidationException, Unauthorized
 
 from app import db
-from app.models import Package, Lead, TeamMember, TripFinance, PackageDestination, Destination, Task, Customer
-from app.schemas import PackageSchema, TripFinanceSchema, TaskSchema, CustomerSchema
+from app.models import Lead, TeamMember, Destination, Task, Customer
+from app.schemas import DummyModelSchema, TaskSchema, CustomerSchema
 
 admin_bp = Blueprint("admin", __name__)
 
-TOKEN_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 hours
-
-
-def _serializer():
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
-
-
-def _make_token(admin_email: str):
-    return _serializer().dumps({"email": admin_email}, salt="admin-auth")
-
-
-def _verify_token(token: str):
-    return _serializer().loads(
-        token,
-        salt="admin-auth",
-        max_age=TOKEN_MAX_AGE_SECONDS,
-    )
-
-
-def admin_required(view_func):
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        parts = auth_header.split(" ", 1)
-        token = parts[1].strip() if len(parts) == 2 else ""
-
-        if not token:
-            raise Unauthorized("Missing admin token")
-
-        try:
-            _verify_token(token)
-        except SignatureExpired:
-            raise Unauthorized("Token expired")
-        except BadSignature:
-            raise Unauthorized("Invalid token")
-
-        return view_func(*args, **kwargs)
-
-    return wrapper
+from app.modules.auth.permissions import role_required
 
 
 # -------------------------
-# Admin Login
+# CRM CRUD routes migrated to app/modules/crm/
 # -------------------------
-@admin_bp.route("/login", methods=["POST"])
-def admin_login():
-    from app.models import Admin
-
-    data = request.get_json() or {}
-
-    email = data.get("email")
-    password = data.get("password")
-
-    admin = Admin.query.filter_by(email=email).first()
-
-    if admin and admin.check_password(password):
-
-        token = _make_token(email)
-
-        return jsonify({
-            "message": "Login successful",
-            "token": token
-        })
-
-    raise Unauthorized("Invalid credentials")
 
 
-# -------------------------
-# Get Leads
-# -------------------------
-@admin_bp.route("/leads", methods=["GET"])
-@admin_required
-def get_leads():
-
-    leads = Lead.query.order_by(Lead.id.desc()).all()
-
-    result = []
-
-    for lead in leads:
-        result.append({
-            "id": lead.id,
-            "name": lead.name,
-            "phone": lead.phone,
-            "email": lead.email,
-            "lead_type": lead.lead_type,
-            "package_id": lead.package_id,
-            "travel_dates": lead.travel_dates,
-            "travelers": lead.travelers,
-            "budget": lead.budget,
-            "status": lead.status,
-            "contact_person_id": lead.contact_person_id
-        })
-
-    return jsonify(result)
-
-
-# -------------------------
-# Update Lead Status
-# -------------------------
-@admin_bp.route("/lead/<int:lead_id>", methods=["PATCH"])
-@admin_required
-def update_lead_status(lead_id):
-
-    lead = Lead.query.get_or_404(lead_id)
-
-    data = request.get_json()
-
-    lead.status = data.get("status", lead.status)
-    if "contact_person_id" in data:
-        lead.contact_person_id = data.get("contact_person_id")
-
-    db.session.commit()
-
-    return jsonify({"message": "Lead updated"})
-
-
-# -------------------------
-# Convert Lead to Booking
-# -------------------------
-@admin_bp.route("/lead/<int:lead_id>/convert", methods=["POST"])
-@admin_required
-def convert_lead_to_booking(lead_id):
-    from app.models import Customer, Booking, Task
-    from datetime import datetime
-
-    lead = Lead.query.get_or_404(lead_id)
-
-    if lead.status == "confirmed":
-        raise ValidationException("Lead is already confirmed")
-
-    data = request.get_json() or {}
-
-    # Check for existing Customer
-    customer = None
-    if lead.email or lead.phone:
-        query = Customer.query
-        if lead.email and lead.phone:
-            customer = query.filter(db.or_(Customer.email == lead.email, Customer.phone == lead.phone)).first()
-        elif lead.email:
-            customer = query.filter_by(email=lead.email).first()
-        else:
-            customer = query.filter_by(phone=lead.phone).first()
-
-    if not customer:
-        customer = Customer(
-            name=lead.name,
-            email=lead.email,
-            phone=lead.phone,
-            address=data.get("address", ""),
-            preferences=lead.notes
-        )
-        db.session.add(customer)
-        db.session.flush() # To get customer.id
-
-    # Parse Dates
-    start_date_str = data.get("start_date")
-    end_date_str = data.get("end_date")
-    start_date = None
-    end_date = None
-    
-    if start_date_str:
-        try:
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        except ValueError:
-            pass
-            
-    if end_date_str:
-        try:
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-        except ValueError:
-            pass
-
-    # Create Booking
-    booking = Booking(
-        lead_id=lead.id,
-        customer_id=customer.id,
-        package_id=lead.package_id,
-        total_price=data.get("total_price", 0),
-        start_date=start_date,
-        end_date=end_date,
-        status="confirmed"
-    )
-    db.session.add(booking)
-
-    # Auto-generate a "Review Itinerary" task
-    task = Task(
-        linked_lead_id=lead.id,
-        description="Review Itinerary for newly confirmed booking",
-        status="pending"
-    )
-    db.session.add(task)
-
-    # Update Lead Status
-    lead.status = "confirmed"
-
-    db.session.commit()
-
-    return jsonify({
-        "message": "Lead converted to booking successfully",
-        "customer_id": customer.id,
-        "booking_id": booking.id
-    })
-
-
-# -------------------------
-# Get Packages
-# -------------------------
-@admin_bp.route("/packages", methods=["GET"])
-@admin_required
-def get_packages():
-    packages = Package.query.order_by(Package.id.desc()).all()
-    result = []
-    for pkg in packages:
-        destinations = [pd.destination_id for pd in pkg.destinations]
-        result.append({
-            "id": pkg.id,
-            "title": pkg.title,
-            "description": pkg.description,
-            "duration_days": pkg.duration_days,
-            "duration_nights": pkg.duration_nights,
-            "price_per_person": pkg.price_per_person,
-            "thumbnail_url": pkg.thumbnail_url,
-            "highlights": pkg.highlights,
-            "destination_ids": destinations
-        })
-    return jsonify(result)
-
-
-# -------------------------
-# Create Package
-# -------------------------
-@admin_bp.route("/packages", methods=["POST"])
-@admin_required
-def create_package():
-
-    data = request.get_json()
-
-    try:
-        validated_data = PackageSchema().load(data)
-    except ValidationError as err:
-        raise ValidationException("Validation failed", payload=err.messages)
-
-    pkg = Package(
-        title=validated_data.get("title"),
-        description=validated_data.get("description"),
-        duration_days=validated_data.get("duration_days"),
-        duration_nights=validated_data.get("duration_nights"),
-        price_per_person=validated_data.get("price_per_person"),
-        thumbnail_url=validated_data.get("thumbnail_url"),
-        highlights=validated_data.get("highlights")
-    )
-
-    db.session.add(pkg)
-    db.session.flush()
-
-    destination_ids = validated_data.get("destination_ids", [])
-    for dest_id in destination_ids:
-        pkg_dest = PackageDestination(package_id=pkg.id, destination_id=dest_id)
-        db.session.add(pkg_dest)
-
-    db.session.commit()
-
-    return jsonify({"message": "Package created", "id": pkg.id}), 201
-
-
-# -------------------------
-# Update Package
-# -------------------------
-@admin_bp.route("/packages/<int:package_id>", methods=["PUT"])
-@admin_required
-def update_package(package_id):
-    pkg = Package.query.get_or_404(package_id)
-    data = request.get_json()
-
-    try:
-        validated_data = PackageSchema().load(data)
-    except ValidationError as err:
-        raise ValidationException("Validation failed", payload=err.messages)
-
-    pkg.title = validated_data.get("title", pkg.title)
-    pkg.description = validated_data.get("description", pkg.description)
-    pkg.duration_days = validated_data.get("duration_days", pkg.duration_days)
-    pkg.duration_nights = validated_data.get("duration_nights", pkg.duration_nights)
-    pkg.price_per_person = validated_data.get("price_per_person", pkg.price_per_person)
-    pkg.thumbnail_url = validated_data.get("thumbnail_url", pkg.thumbnail_url)
-    pkg.highlights = validated_data.get("highlights", pkg.highlights)
-
-    if validated_data.get("destination_ids") is not None:
-        PackageDestination.query.filter_by(package_id=pkg.id).delete()
-        for dest_id in validated_data["destination_ids"]:
-            pkg_dest = PackageDestination(package_id=pkg.id, destination_id=dest_id)
-            db.session.add(pkg_dest)
-
-    db.session.commit()
-    return jsonify({"message": "Package updated"})
-
-
-# -------------------------
-# Delete Package
-# -------------------------
-@admin_bp.route("/packages/<int:package_id>", methods=["DELETE"])
-@admin_required
-def delete_package(package_id):
-    pkg = Package.query.get_or_404(package_id)
-    PackageDestination.query.filter_by(package_id=pkg.id).delete()
-    db.session.delete(pkg)
-    db.session.commit()
-    return jsonify({"message": "Package deleted"})
+# Package CRUD routes migrated to app/modules/package/ (registered at /api/v1/packages)
 
 
 # -------------------------
 # Get Destinations
 # -------------------------
 @admin_bp.route("/destinations", methods=["GET"])
-@admin_required
+@role_required("Admin")
 def get_destinations():
     destinations = Destination.query.order_by(Destination.id.desc()).all()
     result = []
@@ -345,7 +46,7 @@ def get_destinations():
 # Create Destination
 # -------------------------
 @admin_bp.route("/destinations", methods=["POST"])
-@admin_required
+@role_required("Admin")
 def create_destination():
     data = request.get_json()
     dest = Destination(
@@ -364,7 +65,7 @@ def create_destination():
 # Update Destination
 # -------------------------
 @admin_bp.route("/destinations/<int:dest_id>", methods=["PUT"])
-@admin_required
+@role_required("Admin")
 def update_destination(dest_id):
     dest = Destination.query.get_or_404(dest_id)
     data = request.get_json()
@@ -381,7 +82,7 @@ def update_destination(dest_id):
 # Delete Destination
 # -------------------------
 @admin_bp.route("/destinations/<int:dest_id>", methods=["DELETE"])
-@admin_required
+@role_required("Admin")
 def delete_destination(dest_id):
     dest = Destination.query.get_or_404(dest_id)
     db.session.delete(dest)
@@ -389,70 +90,7 @@ def delete_destination(dest_id):
     return jsonify({"message": "Destination deleted"})
 
 
-# -------------------------
-# Get Team Members
-# -------------------------
-@admin_bp.route("/team-members", methods=["GET"])
-@admin_required
-def get_team_members():
-    members = TeamMember.query.order_by(TeamMember.id.desc()).all()
-    result = []
-    for m in members:
-        result.append({
-            "id": m.id,
-            "name": m.name,
-            "role": m.role,
-            "phone": m.phone,
-            "active": m.active
-        })
-    return jsonify(result)
 
-
-# -------------------------
-# Create Team Member
-# -------------------------
-@admin_bp.route("/team-members", methods=["POST"])
-@admin_required
-def create_team_member():
-    data = request.get_json()
-    member = TeamMember(
-        name=data.get("name"),
-        role=data.get("role"),
-        phone=data.get("phone"),
-        active=data.get("active", True)
-    )
-    db.session.add(member)
-    db.session.commit()
-    return jsonify({"message": "Team member created", "id": member.id}), 201
-
-
-# -------------------------
-# Update Team Member
-# -------------------------
-@admin_bp.route("/team-members/<int:member_id>", methods=["PUT"])
-@admin_required
-def update_team_member(member_id):
-    member = TeamMember.query.get_or_404(member_id)
-    data = request.get_json()
-    member.name = data.get("name", member.name)
-    member.role = data.get("role", member.role)
-    member.phone = data.get("phone", member.phone)
-    if "active" in data:
-        member.active = data.get("active")
-    db.session.commit()
-    return jsonify({"message": "Team member updated"})
-
-
-# -------------------------
-# Delete Team Member
-# -------------------------
-@admin_bp.route("/team-members/<int:member_id>", methods=["DELETE"])
-@admin_required
-def delete_team_member(member_id):
-    member = TeamMember.query.get_or_404(member_id)
-    db.session.delete(member)
-    db.session.commit()
-    return jsonify({"message": "Team member deleted"})
 
 
 
@@ -460,9 +98,9 @@ def delete_team_member(member_id):
 # Finance Entry
 # -------------------------
 @admin_bp.route("/finance", methods=["GET"])
-@admin_required
+@role_required("Admin")
 def get_finances():
-    finances = TripFinance.query.order_by(TripFinance.id.desc()).all()
+    finances = DummyModel.query.order_by(DummyModel.id.desc()).all()
     result = []
     for f in finances:
         lead = Lead.query.get(f.lead_id)
@@ -483,12 +121,12 @@ def get_finances():
     return jsonify(result)
 
 @admin_bp.route("/finance", methods=["POST"])
-@admin_required
+@role_required("Admin")
 def add_finance():
     data = request.get_json()
 
     try:
-        validated_data = TripFinanceSchema().load(data)
+        validated_data = DummyModelSchema().load(data)
     except ValidationError as err:
         raise ValidationException("Validation failed", payload=err.messages)
 
@@ -502,7 +140,7 @@ def add_finance():
     total_cost = transport + hotel + food + activity + other
     profit = revenue - total_cost
 
-    finance = TripFinance(
+    finance = DummyModel(
         lead_id=validated_data.get("lead_id"),
         revenue=revenue,
         transport_cost=transport,
@@ -520,13 +158,13 @@ def add_finance():
     return jsonify({"message": "Finance record added", "id": finance.id})
 
 @admin_bp.route("/finance/<int:id>", methods=["PUT"])
-@admin_required
+@role_required("Admin")
 def update_finance(id):
-    finance = TripFinance.query.get_or_404(id)
+    finance = DummyModel.query.get_or_404(id)
     data = request.get_json()
 
     try:
-        validated_data = TripFinanceSchema().load(data, partial=True)
+        validated_data = DummyModelSchema().load(data, partial=True)
     except ValidationError as err:
         raise ValidationException("Validation failed", payload=err.messages)
 
@@ -549,9 +187,9 @@ def update_finance(id):
     return jsonify({"message": "Finance record updated"})
 
 @admin_bp.route("/finance/<int:id>", methods=["DELETE"])
-@admin_required
+@role_required("Admin")
 def delete_finance(id):
-    finance = TripFinance.query.get_or_404(id)
+    finance = DummyModel.query.get_or_404(id)
     db.session.delete(finance)
     db.session.commit()
     return jsonify({"message": "Finance record deleted"})
@@ -561,7 +199,7 @@ def delete_finance(id):
 # Task Management Engine
 # -------------------------
 @admin_bp.route("/tasks", methods=["GET"])
-@admin_required
+@role_required("Admin")
 def get_tasks():
     tasks = Task.query.order_by(Task.id.desc()).all()
     result = []
@@ -579,7 +217,7 @@ def get_tasks():
 
 
 @admin_bp.route("/tasks", methods=["POST"])
-@admin_required
+@role_required("Admin")
 def create_task():
     from datetime import datetime
     data = request.get_json()
@@ -614,7 +252,7 @@ def create_task():
 
 
 @admin_bp.route("/tasks/<int:id>", methods=["PUT", "PATCH"])
-@admin_required
+@role_required("Admin")
 def update_task(id):
     from datetime import datetime
     task = Task.query.get_or_404(id)
@@ -648,7 +286,7 @@ def update_task(id):
 
 
 @admin_bp.route("/tasks/<int:id>", methods=["DELETE"])
-@admin_required
+@role_required("Admin")
 def delete_task(id):
     task = Task.query.get_or_404(id)
     db.session.delete(task)

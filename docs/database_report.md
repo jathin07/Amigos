@@ -1,6 +1,8 @@
 # Amigos Tourism - Database Design Specification Report
 
-This specification details the final frozen database schema for Amigos Tourism. All primary keys utilize UUID formats, and financial properties are dynamically derived.
+This specification details the target database schema for Amigos Tourism. All primary keys utilize UUID formats, reusable reference data is owned by the Master module, and financial properties are dynamically derived.
+
+> Implementation alignment note: the live backend is currently in transition. The legacy monolithic `backend/app/models.py` still contains text-based destination location fields, while the new Master module has introduced normalized `countries`, `states`, `districts`, and an unfinalized `cities` module. The target schema below reflects the direction that must be reconciled through reviewed migrations before the database is treated as frozen.
 
 ---
 
@@ -9,6 +11,11 @@ This specification details the final frozen database schema for Amigos Tourism. 
 ```mermaid
 erDiagram
     %% Lookup Tables
+    Country ||--o{ State : "has"
+    State ||--o{ District : "has"
+    Country ||--o{ Destination : "located_in"
+    State ||--o{ Destination : "located_in"
+    District ||--o{ Destination : "located_in"
     OrganizationType ||--o{ Organization : "categorizes"
     VendorType ||--o{ Vendor : "categorizes"
     Destination ||--o{ DestinationImage : "has"
@@ -94,16 +101,71 @@ erDiagram
 - `name`: VARCHAR(100) (Unique, Not Null) - e.g. Hotel, Transport, Activity
 - `is_active`: BOOLEAN (Not Null, default True)
 
+#### `Country` (Master)
+- `id`: UUID (PK)
+- `code`: VARCHAR(10) (Unique, Not Null, Indexed) - e.g. IN
+- `name`: VARCHAR(100) (Not Null)
+- `phone_code`: VARCHAR(10)
+- `description`: TEXT
+- `display_order`: INTEGER (Not Null, default 0)
+- `is_active`: BOOLEAN (Not Null, default True, Indexed)
+- `version`: INTEGER (Not Null, default 1)
+- `created_at`, `updated_at`: DATETIME (Not Null)
+- `created_by`, `updated_by`: VARCHAR(36), nullable actor identifiers
+
+#### `State` (Master)
+- `id`: UUID (PK)
+- `country_id`: UUID (FK -> `countries.id`, Not Null, RESTRICT)
+- `code`: VARCHAR(10) (Not Null)
+- `name`: VARCHAR(100) (Not Null)
+- `description`: TEXT
+- `display_order`: INTEGER (Not Null, default 0)
+- `is_active`: BOOLEAN (Not Null, default True, Indexed)
+- `version`: INTEGER (Not Null, default 1)
+- `created_at`, `updated_at`: DATETIME (Not Null)
+- `created_by`, `updated_by`: VARCHAR(36), nullable actor identifiers
+- **Constraints**:
+  - Compound unique constraint on `(country_id, code)`.
+  - FK must block deleting/deactivating a country while active states exist.
+
+#### `District` (Master, pending DTO approval)
+- `id`: UUID (PK)
+- `state_id`: UUID (FK -> `states.id`, Not Null, RESTRICT)
+- `code`: VARCHAR(10) (Not Null)
+- `name`: VARCHAR(100) (Not Null)
+- `description`: VARCHAR(255)
+- `display_order`: INTEGER (default 0)
+- `is_active`: BOOLEAN (Not Null, default True, Indexed)
+- `version`: INTEGER (Not Null, default 1)
+- `created_at`, `updated_at`: DATETIME (Not Null)
+- `created_by`, `updated_by`: VARCHAR(36), nullable actor identifiers
+- **Constraints**:
+  - Compound unique constraint on `(state_id, code)`.
+  - FK must block deleting/deactivating a state while active districts exist.
+
+> `City` currently exists in the modular codebase, but it is not part of the frozen Master DTO contract. It must either be promoted into this report and the DTO spec with a clear business purpose, or removed before Destination is finalized.
+
 #### `Destination`
 - `id`: UUID (PK)
+- `country_id`: UUID (FK -> `countries.id`, Not Null, RESTRICT)
+- `state_id`: UUID (FK -> `states.id`, Not Null, RESTRICT)
+- `district_id`: UUID (FK -> `districts.id`, Nullable until District is approved; otherwise Not Null, RESTRICT)
+- `code`: VARCHAR(30) (Unique, Not Null)
+- `slug`: VARCHAR(150) (Unique, Not Null)
 - `name`: VARCHAR(150) (Not Null)
-- `district`: VARCHAR(100)
-- `city`: VARCHAR(100)
-- `state`: VARCHAR(100) (Not Null)
-- `country`: VARCHAR(100) (Not Null)
 - `description`: TEXT
-- `thumbnail_url`: TEXT
+- `cover_image`: TEXT
+- `display_order`: INTEGER (Not Null, default 0)
+- `latitude`: NUMERIC(12, 6)
+- `longitude`: NUMERIC(12, 6)
 - `tags`: JSON
+- `is_active`: BOOLEAN (Not Null, default True, Indexed)
+- `version`: INTEGER (Not Null, default 1)
+- `created_at`, `updated_at`: DATETIME (Not Null)
+- `created_by`, `updated_by`: VARCHAR(36), nullable actor identifiers
+- **Migration note**:
+  - Legacy columns `district`, `city`, `state`, `country`, `thumbnail_url`, and `best_season` exist in the monolithic model and must be backfilled into normalized FK/code fields before removal.
+  - Existing `destinations.id` values should be preserved wherever possible because package, lead, proposal, and operations tables already reference them.
 
 #### `DestinationImage`
 - `id`: UUID (PK)
@@ -510,6 +572,57 @@ Tracks database-level CRUD operations.
 - `new_values`: JSON
 - `ip_address`: VARCHAR(45)
 - `timestamp`: DATETIME (Not Null)
+
+---
+
+## 3. Master Database Reconciliation Requirements
+
+The Master DTO workstream must reconcile the existing database before additional master tables are considered production-ready.
+
+### 3.1 Current implementation risks
+
+- The legacy monolithic model still defines many business tables alongside the new modular Master entities.
+- The current Alembic history is not a clean fresh-database baseline. At least one revision drops legacy business tables while adding country-related work, which is unsafe for environments with data.
+- `Destination` is already referenced by package, lead, proposal, and trip operations records, so it cannot be replaced casually.
+- SQLite is used locally, while production configuration expects PostgreSQL. PostgreSQL-only features such as partial unique indexes must be tested against PostgreSQL before release.
+- Service-level duplicate checks must not be the only protection. Unique and FK constraints belong in the database as well.
+
+### 3.2 Required migration strategy
+
+1. Create a verified backup/snapshot of existing `destinations`, `destination_images`, `package_destinations`, `lead_destinations`, `proposal_destinations`, and `trip_days`.
+2. Create or repair a reproducible Alembic baseline that can build a fresh database from zero.
+3. Create an existing-database migration path that preserves current UUID values and consumer FKs.
+4. Add nullable normalized Destination fields first: `country_id`, `state_id`, `district_id`, `code`, `slug`, `cover_image`, `display_order`, `version`.
+5. Backfill normalized values from legacy text fields using an explicit mapping report. Ambiguous locations must be manually resolved.
+6. Validate that every active destination has valid normalized geography and unique `code`/`slug`.
+7. Add `NOT NULL`, FK, and unique constraints only after the backfill passes.
+8. Update legacy public/admin routes and services to use the Master Destination contract.
+9. Drop or archive legacy text fields only after all consumers read the normalized schema.
+
+### 3.3 Master dependency rules
+
+Reference data is soft-deactivated, not hard-deleted, once it has consumers. Deactivation must return `ERR_ENTITY_IN_USE` with HTTP 409 when active dependent records exist.
+
+| Master table | Must check active dependants before deactivation |
+|---|---|
+| `countries` | `states`, `destinations` |
+| `states` | `districts`, `destinations` |
+| `districts` | `destinations` |
+| `destinations` | `package_destinations`, `lead_destinations`, `proposal_destinations`, `trip_days.overnight_destination_id` |
+| `payment_methods` | `payments`, `vendor_payments`, `refunds` |
+| `expense_categories` | `expenses` |
+| `expense_types` | `expenses` |
+| `vendor_types` | `vendors`, `vendor_allocations.service_type_id` |
+
+### 3.4 Acceptance criteria for database readiness
+
+- Alembic head creates the expected schema on a fresh database.
+- Alembic head upgrades a copied existing development database without dropping business data.
+- PostgreSQL migration and constraint behavior is verified separately from SQLite.
+- All Master FKs use explicit protected delete semantics.
+- Every lookup/master table has consistent audit fields, `is_active`, and optimistic `version`.
+- Seed scripts are idempotent and ordered by FK dependency.
+- Route/service tests prove dependency-blocked deactivation and uniqueness conflict behavior.
 
 ---
 
