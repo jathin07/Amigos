@@ -22,6 +22,7 @@ class ContactPersonResponseSchema(Schema):
     """
     id = fields.UUID()
     organization_id = fields.UUID(allow_none=True)
+    organization = fields.Method("get_organization")
     name = fields.String()
     designation = fields.String(allow_none=True)
     phone = fields.String()
@@ -33,6 +34,17 @@ class ContactPersonResponseSchema(Schema):
     is_active = fields.Boolean()
     created_at = fields.DateTime()
     updated_at = fields.DateTime()
+
+    def get_organization(self, obj):
+        if hasattr(obj, "organization") and obj.organization:
+            org = obj.organization
+            org_name = getattr(org, "organization_name", None) or getattr(org, "name", "")
+            return {
+                "id": str(org.id),
+                "name": org_name,
+                "legal_name": getattr(org, "legal_name", None),
+            }
+        return None
 
 
 class SimpleLookupResponseSchema(Schema):
@@ -198,6 +210,7 @@ class LeadDetailResponseSchema(Schema):
     contact_person = fields.Nested(ContactPersonResponseSchema)
     lead_source = fields.Nested(SimpleLookupResponseSchema)
     organization_division_id = fields.UUID(allow_none=True)
+    organization_division = fields.Method("get_organization_division")
     package = fields.Nested(SimplePackageResponseSchema, allow_none=True)
     trip_type = fields.Nested(SimpleLookupResponseSchema, allow_none=True)
     priority = fields.Nested(SimpleLookupResponseSchema, allow_none=True)
@@ -218,6 +231,20 @@ class LeadDetailResponseSchema(Schema):
     owner_team_member_id = fields.UUID(allow_none=True)
     destinations = fields.List(fields.Nested(LeadDestinationResponseSchema), attribute="lead_destinations")
     version = fields.Integer()
+
+    def get_organization_division(self, obj):
+        if hasattr(obj, "organization_division") and obj.organization_division:
+            div = obj.organization_division
+            return {
+                "id": str(div.id),
+                "department": div.department,
+                "course": div.course,
+                "section": div.section,
+                "year": div.year,
+                "semester": div.semester,
+                "batch": div.batch,
+            }
+        return None
     audit_info = fields.Method("get_audit_info")
 
     def get_audit_info(self, obj):

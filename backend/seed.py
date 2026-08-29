@@ -1,5 +1,5 @@
-from app import create_app, db
-from app.models import Destination
+from app.core.startup import create_app
+from app.core.extensions import db
 from app.models import Package, PackageDestination, Destination
 
 

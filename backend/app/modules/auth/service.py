@@ -6,6 +6,7 @@ import secrets
 from datetime import timedelta, timezone, datetime
 
 from flask import current_app
+from werkzeug.security import check_password_hash as werkzeug_check_password_hash
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -146,10 +147,21 @@ class AuthService:
                     code="ERR_ACCOUNT_LOCKED",
                 )
 
-            if not bcrypt.check_password_hash(
-                user.password_hash,
-                request.password,
-            ):
+            # Verify password against bcrypt or werkzeug hashes
+            is_valid_password = False
+            if user.password_hash:
+                if user.password_hash.startswith("scrypt:") or user.password_hash.startswith("pbkdf2:"):
+                    is_valid_password = werkzeug_check_password_hash(user.password_hash, request.password)
+                    if is_valid_password:
+                        # Auto-upgrade hash to bcrypt format
+                        user.password_hash = bcrypt.generate_password_hash(request.password).decode("utf-8")
+                else:
+                    try:
+                        is_valid_password = bcrypt.check_password_hash(user.password_hash, request.password)
+                    except Exception:
+                        is_valid_password = werkzeug_check_password_hash(user.password_hash, request.password)
+
+            if not is_valid_password:
                 user.failed_login_attempts += 1
                 max_attempts = current_app.config.get("MAX_LOGIN_ATTEMPTS", 5)
 

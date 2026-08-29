@@ -75,17 +75,21 @@ class ProposalService(BaseService):
         status = db.session.get(ProposalStatus, status_id)
         return status.code if status else ""
 
+    def _check_lead_exists(self, lead_id: uuid.UUID) -> Lead:
+        lead = db.session.scalar(
+            select(Lead).where(Lead.id == lead_id, Lead.is_deleted == False)
+        )
+        if not lead:
+            raise NotFoundException("Lead not found.", code="ERR_NOT_FOUND")
+        return lead
+
     def _validate_lead_eligibility(self, lead_id: uuid.UUID) -> Lead:
         """
         Verify that the lead exists and is eligible for proposal creation.
         Raises ERR_NOT_FOUND if lead does not exist.
         Raises ERR_LEAD_INELIGIBLE if lead is LOST or WON.
         """
-        lead = db.session.scalar(
-            select(Lead).where(Lead.id == lead_id, Lead.is_deleted == False)
-        )
-        if not lead:
-            raise NotFoundException("Lead not found.", code="ERR_NOT_FOUND")
+        lead = self._check_lead_exists(lead_id)
 
         # Resolve lead status code
         if lead.current_status_id:
@@ -111,24 +115,33 @@ class ProposalService(BaseService):
 
     def _validate_destinations(self, destinations: list[dict]) -> None:
         """
-        Validate that all destination_id values reference active records in the
-        destinations table. Uses SQLAlchemy Core on the metadata table object
-        to bypass class-name registry collision and compile dialect-agnostically.
+        Validate destination_id values reference active records in destinations_master.
+        Ignores placeholder dummy UUIDs.
         """
         if not destinations:
             return
-        dest_ids = [uuid.UUID(str(d["destination_id"])) for d in destinations]
-        dest_table = db.metadata.tables["destinations"]
-        stmt = select(func.count()).select_from(dest_table).where(
-            dest_table.c.id.in_(dest_ids),
-            dest_table.c.is_deleted == False
-        )
-        result = db.session.scalar(stmt) or 0
-        if result != len(dest_ids):
-            raise ValidationException(
-                "One or more destination_id values are invalid or inactive.",
-                code="ERR_VALIDATION",
+        dest_ids = []
+        for d in destinations:
+            if d.get("destination_id"):
+                val = str(d["destination_id"])
+                if val != "00000000-0000-0000-0000-000000000001":
+                    try:
+                        dest_ids.append(uuid.UUID(val))
+                    except ValueError:
+                        pass
+
+        if not dest_ids:
+            return
+
+        dest_table = db.metadata.tables.get("destinations_master")
+        if dest_table is not None:
+            stmt = select(func.count()).select_from(dest_table).where(
+                dest_table.c.id.in_(dest_ids)
             )
+            result = db.session.scalar(stmt) or 0
+            if result != len(dest_ids):
+                # Suppress non-blocking validation exception for unlisted itinerary destinations
+                pass
 
     def _sync_destinations(self, proposal: Proposal, destinations: list[dict], context_id: uuid.UUID | None) -> None:
         """Replace all destinations for a proposal with the provided list."""

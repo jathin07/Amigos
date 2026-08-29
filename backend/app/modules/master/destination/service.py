@@ -67,34 +67,66 @@ class DestinationService(BaseService):
     # CREATE
     # ─────────────────────────────────────────────
     def create(self, data: dict) -> Destination:
-        country_uid  = self._parse_uuid(data["country_id"])
-        state_uid    = self._parse_uuid(data["state_id"])
-        district_uid = self._parse_uuid(data["district_id"])
+        import re
+        name_clean = data["name"].strip()
 
-        # 1. Hierarchy validation
-        self._validate_hierarchy(country_uid, state_uid, district_uid)
+        # Handle hierarchy fallbacks
+        country_id_val = data.get("country_id")
+        state_id_val = data.get("state_id")
+        district_id_val = data.get("district_id")
 
-        # 2. Duplicate code check
-        code = data["code"].upper()
-        if self.repository.find_by_code(code):
-            raise BusinessException(
-                f"Destination with code '{code}' already exists.",
-                code="ERR_DUPLICATE_CODE",
-            )
+        if country_id_val and state_id_val and district_id_val:
+            country_uid  = self._parse_uuid(country_id_val)
+            state_uid    = self._parse_uuid(state_id_val)
+            district_uid = self._parse_uuid(district_id_val)
+            self._validate_hierarchy(country_uid, state_uid, district_uid)
+        else:
+            from app.modules.master.district.models import District
+            from app.modules.master.state.models import State
+            from app.modules.master.country.models import Country
+            from app.core.extensions import db
+            district = db.session.query(District).first()
+            state = db.session.query(State).first()
+            country = db.session.query(Country).first()
+            district_uid = district.id if district else None
+            state_uid = state.id if state else (district.state_id if district else None)
+            country_uid = country.id if country else (state.country_id if state else None)
 
-        # 3. Duplicate slug check
-        slug = data["slug"].lower()
-        if self.repository.find_by_slug(slug):
-            raise BusinessException(
-                f"Destination with slug '{slug}' already exists.",
-                code="ERR_DUPLICATE_SLUG",
-            )
+        # Auto-generate code if missing
+        code = data.get("code")
+        if not code:
+            base_code = "DST_" + re.sub(r'[^A-Z0-9]', '', name_clean.upper())[:12]
+            code = base_code
+            if self.repository.find_by_code(code):
+                code = f"{base_code}_{_uuid_mod.uuid4().hex[:4].upper()}"
+        else:
+            code = code.upper()
+            if self.repository.find_by_code(code):
+                raise BusinessException(
+                    f"Destination with code '{code}' already exists.",
+                    code="ERR_DUPLICATE_CODE",
+                )
 
-        # 4. Create entity
+        # Auto-generate slug if missing
+        slug = data.get("slug")
+        if not slug:
+            base_slug = re.sub(r'[^a-z0-9]+', '-', name_clean.lower()).strip('-') or "dst"
+            slug = base_slug
+            if self.repository.find_by_slug(slug):
+                slug = f"{base_slug}-{_uuid_mod.uuid4().hex[:4]}"
+        else:
+            slug = slug.lower()
+            if self.repository.find_by_slug(slug):
+                raise BusinessException(
+                    f"Destination with slug '{slug}' already exists.",
+                    code="ERR_DUPLICATE_SLUG",
+                )
+
+        # Create entity
         destination = Destination(
             code          = code,
             slug          = slug,
-            name          = data["name"],
+            name          = name_clean,
             description   = data.get("description"),
             country_id    = country_uid,
             state_id      = state_uid,

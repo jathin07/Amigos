@@ -3,7 +3,7 @@ from flask import Flask
 from app.api.v1.health import health_bp
 from app.core.config import config_by_name
 from app.core.error_handlers import register_error_handlers
-from app.core.extensions import bcrypt, db, jwt, migrate
+from app.core.extensions import bcrypt, db, jwt, migrate, cache
 from app.core.logging import setup_logging
 from app.modules.auth.routes import auth_bp
 from app.workflow.engine import event_bus
@@ -58,6 +58,12 @@ def register_extensions(app: Flask) -> None:
     migrate.init_app(app, db)
     jwt.init_app(app)
     bcrypt.init_app(app)
+    cache.init_app(app)
+
+    # Initialize CORS for api endpoints
+    from flask_cors import CORS
+    frontend_origin = app.config.get("FRONTEND_ORIGIN", "*")
+    CORS(app, resources={r"/*": {"origins": frontend_origin}})
 
 
 def register_blueprints(app: Flask) -> None:
@@ -131,6 +137,36 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(
         booking_bp,
         url_prefix="/api/v1",
+    )
+
+    from app.modules.operations import operations_bp
+    app.register_blueprint(
+        operations_bp,
+        url_prefix="/api/v1/operations",
+    )
+
+    from app.modules.finance import finance_bp
+    app.register_blueprint(
+        finance_bp,
+        url_prefix="/api/v1/finance",
+    )
+
+    from app.modules.storage import storage_bp
+    app.register_blueprint(
+        storage_bp,
+        url_prefix="/api/v1/storage",
+    )
+
+    from app.modules.dashboard import dashboard_bp
+    app.register_blueprint(
+        dashboard_bp,
+        url_prefix="/api/v1/dashboard",
+    )
+
+    from app.modules.reports import reports_bp
+    app.register_blueprint(
+        reports_bp,
+        url_prefix="/api/v1/reports",
     )
 
     from app.routes.public_routes import public_bp

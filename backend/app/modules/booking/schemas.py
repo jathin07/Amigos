@@ -59,6 +59,10 @@ class UpdateBookingRequestSchema(Schema):
     row_version = fields.Integer(required=True)
     group_name = fields.String(allow_none=True, validate=validate.Length(max=200))
     internal_notes = fields.String(allow_none=True, validate=validate.Length(max=1000))
+    trip_coordinator_team_member_id = fields.UUID(allow_none=True)
+    trip_start_date = fields.Date(allow_none=True)
+    trip_end_date = fields.Date(allow_none=True)
+    total_amount = fields.Decimal(allow_none=True, places=2)
 
 
 class ConfirmBookingRequestSchema(Schema):
@@ -124,6 +128,18 @@ class BookingSummaryResponseSchema(Schema):
     total_amount = fields.Decimal(places=2, as_string=True)
     status = fields.Nested(SimpleLookupResponseSchema)
     created_at = fields.DateTime(attribute="booking_created_at")
+    contact_person_snapshot = fields.String()
+    package_name_snapshot = fields.String()
+    trip_coordinator = fields.Method("get_trip_coordinator")
+
+    def get_trip_coordinator(self, obj) -> dict | None:
+        if obj.trip_coordinator:
+            return {
+                "id": str(obj.trip_coordinator.id),
+                "display_name": obj.trip_coordinator.display_name or obj.trip_coordinator.name
+            }
+        return None
+
 
 
 class BookingDetailResponseSchema(Schema):

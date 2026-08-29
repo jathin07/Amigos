@@ -7,30 +7,34 @@ from marshmallow import Schema, fields, validate, validates, ValidationError
 # ─────────────────────────────────────────────
 
 class CreateDestinationRequestSchema(Schema):
-    name          = fields.String(required=True,  validate=validate.Length(min=1, max=150))
-    code          = fields.String(required=True,  validate=validate.Length(min=1, max=20))
-    slug          = fields.String(required=True,  validate=validate.Length(min=1, max=100))
-    country_id    = fields.UUID(required=True)
-    state_id      = fields.UUID(required=True)
-    district_id   = fields.UUID(required=True)
-    description   = fields.String(load_default=None,  validate=validate.Length(max=2000))
-    cover_image   = fields.String(load_default=None,  validate=validate.Length(max=500))
+    name          = fields.String(required=True, validate=validate.Length(min=1, max=150))
+    code          = fields.String(load_default=None, allow_none=True)
+    slug          = fields.String(load_default=None, allow_none=True)
+    country_id    = fields.UUID(load_default=None, allow_none=True)
+    state_id      = fields.UUID(load_default=None, allow_none=True)
+    district_id   = fields.UUID(load_default=None, allow_none=True)
+    description   = fields.String(load_default=None, validate=validate.Length(max=2000))
+    cover_image   = fields.String(load_default=None, validate=validate.Length(max=500))
     latitude      = fields.Decimal(load_default=None, places=7, as_string=False)
     longitude     = fields.Decimal(load_default=None, places=7, as_string=False)
-    display_order = fields.Integer(load_default=0,    validate=validate.Range(min=0))
+    display_order = fields.Integer(load_default=0, validate=validate.Range(min=0))
     is_active     = fields.Boolean(load_default=True)
 
     @validates("code")
     def validate_code(self, value, **kwargs):
-        if not re.match(r"^[A-Z0-9_\-]+$", value.strip().upper()):
-            raise ValidationError("Code must be uppercase letters, digits, underscores, or hyphens only.")
-        return value.strip().upper()
+        if value:
+            if not re.match(r"^[A-Z0-9_\-]+$", value.strip().upper()):
+                raise ValidationError("Code must be uppercase letters, digits, underscores, or hyphens only.")
+            return value.strip().upper()
+        return value
 
     @validates("slug")
     def validate_slug(self, value, **kwargs):
-        if not re.match(r"^[a-z0-9\-]+$", value.strip().lower()):
-            raise ValidationError("Slug must be lowercase letters, digits, or hyphens only.")
-        return value.strip().lower()
+        if value:
+            if not re.match(r"^[a-z0-9\-]+$", value.strip().lower()):
+                raise ValidationError("Slug must be lowercase letters, digits, or hyphens only.")
+            return value.strip().lower()
+        return value
 
 
 class UpdateDestinationRequestSchema(Schema):

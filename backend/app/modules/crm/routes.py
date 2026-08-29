@@ -42,7 +42,10 @@ def _flatten_errors(messages: dict) -> list[dict]:
 
 def _get_context_team_member_id() -> uuid.UUID | None:
     """Helper to safely retrieve the team member ID of the authenticated user account context."""
-    identity = get_jwt_identity()
+    try:
+        identity = get_jwt_identity()
+    except RuntimeError:
+        identity = None
     if not identity:
         return None
     try:
@@ -73,6 +76,28 @@ def create_contact():
     contact = service.create_or_get_contact(data)
     response_data = ContactPersonResponseSchema().dump(contact)
     return service.success(data=response_data, message="Contact person processed successfully.", status_code=201)
+
+
+@crm_bp.route("/crm/contacts", methods=["GET"])
+@permission_required("crm.read")
+def list_contacts():
+    service = ContactService()
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
+    except ValueError:
+        return service.error("Page and page_size must be integers.", code="ERR_VALIDATION", status_code=400)
+
+    search = request.args.get("search", "")
+
+    result = service.list_contacts(page=page, page_size=page_size, search_query=search)
+    meta = {
+        "page": result.page,
+        "page_size": result.page_size,
+        "total_records": result.total_records,
+        "total_pages": result.total_pages
+    }
+    return service.success(data=result.items, meta=meta, message="Contacts directory retrieved successfully.")
 
 
 @crm_bp.route("/crm/contacts/<uuid:id>", methods=["GET"])

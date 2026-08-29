@@ -43,10 +43,11 @@ class TeamRepository(SQLAlchemyBaseRepository[TeamMember]):
 
     def find_by_employee_code(self, code: str) -> TeamMember | None:
         """Find active team member by employee code (case-insensitive check is clean)."""
-        return self.model_class.query.filter(
+        stmt = select(self.model_class).where(
             self.model_class.employee_code.ilike(code.strip()),
             self.model_class.is_deleted == False
-        ).first()
+        )
+        return db.session.scalars(stmt).first()
 
     def find_by_employee_code_excluding(self, code: str, exclude_id: uuid.UUID) -> TeamMember | None:
         """Find active team member by employee code excluding a specific ID."""
@@ -62,10 +63,11 @@ class TeamRepository(SQLAlchemyBaseRepository[TeamMember]):
 
     def find_by_official_email(self, email: str) -> TeamMember | None:
         """Find active team member by official email (case-insensitive)."""
-        return self.model_class.query.filter(
+        stmt = select(self.model_class).where(
             self.model_class.official_email.ilike(email.strip()),
             self.model_class.is_deleted == False
-        ).first()
+        )
+        return db.session.scalars(stmt).first()
 
     def find_by_official_email_excluding(self, email: str, exclude_id: uuid.UUID) -> TeamMember | None:
         """Find active team member by official email excluding a specific ID."""

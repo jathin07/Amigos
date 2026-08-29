@@ -37,8 +37,8 @@ const AdminPackages = () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
       const [pkgsData, destsData] = await Promise.all([
-        apiFetch('/admin/packages', { headers }),
-        apiFetch('/destinations')
+        apiFetch('/packages', { headers }).then(res => res.items || res || []),
+        apiFetch('/masters/destinations/lookup').then(res => res.data || res || [])
       ]);
       
       setPackages(pkgsData || []);

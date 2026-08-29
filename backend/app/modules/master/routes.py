@@ -21,6 +21,7 @@ from .models import (
     CancellationPolicy,
     TaxConfiguration,
 )
+from app.models import PaymentType, VendorType, OrganizationType
 
 # Import all schemas
 from .schemas import (
@@ -385,6 +386,9 @@ CONFIGS = [
     ("activity-types", ActivityType, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "activity_type"),
     ("seasons", Season, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "season"),
     ("payment-methods", PaymentMethod, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "payment_method"),
+    ("payment-types", PaymentType, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "payment_type"),
+    ("vendor-types", VendorType, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "vendor_type"),
+    ("organization-types", OrganizationType, BaseMasterRequestSchema, BaseMasterUpdateSchema, BaseMasterSummaryResponseSchema, BaseMasterDetailResponseSchema, BaseMasterLookupResponseSchema, "organization_type"),
     ("currencies", Currency, CreateCurrencyRequestSchema, UpdateCurrencyRequestSchema, CurrencySummaryResponseSchema, CurrencyDetailResponseSchema, CurrencyLookupResponseSchema, "currency"),
     ("cancellation-policies", CancellationPolicy, CreateCancellationPolicyRequestSchema, UpdateCancellationPolicyRequestSchema, CancellationPolicySummaryResponseSchema, CancellationPolicyDetailResponseSchema, CancellationPolicyLookupResponseSchema, "cancellation_policy"),
     ("tax-configurations", TaxConfiguration, CreateTaxConfigurationRequestSchema, UpdateTaxConfigurationRequestSchema, TaxConfigurationSummaryResponseSchema, TaxConfigurationDetailResponseSchema, TaxConfigurationLookupResponseSchema, "tax_configuration"),

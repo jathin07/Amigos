@@ -41,7 +41,10 @@ def _flatten_errors(messages: dict) -> list[dict]:
 
 def _get_context_team_member_id() -> uuid.UUID | None:
     """Helper to safely retrieve the team member ID of the authenticated user account context."""
-    identity = get_jwt_identity()
+    try:
+        identity = get_jwt_identity()
+    except RuntimeError:
+        identity = None
     if not identity:
         return None
     try:
@@ -192,7 +195,7 @@ def list_proposals():
 def list_by_lead(lead_id):
     service = ProposalService()
     # Check if lead exists, to raise 404 appropriately
-    service._validate_lead_eligibility(lead_id)
+    service._check_lead_exists(lead_id)
     proposals = service.list_by_lead(lead_id)
     response_data = ProposalVersionSummaryResponseSchema(many=True).dump(proposals)
     return service.success(data=response_data, message="Lead version history retrieved successfully.", status_code=200)

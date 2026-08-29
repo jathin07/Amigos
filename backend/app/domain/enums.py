@@ -63,6 +63,7 @@ class RoleType(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     TEAM_MEMBER = "TEAM_MEMBER"
+    OPERATIONS = "OPERATIONS"
 
 
 class AssignmentType(str, Enum):

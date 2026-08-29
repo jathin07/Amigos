@@ -33,6 +33,7 @@ from app.models import (
     TaskPriority,
     Destination,
     TeamMember,
+    Role,
     Package,
     CRMActivityType,
     FollowUpType
@@ -52,6 +53,9 @@ class ContactService(BaseService):
     """
     def __init__(self):
         self.repository = ContactPersonRepository()
+
+    def list_contacts(self, page=1, page_size=20, search_query=None):
+        return self.repository.paginate_contacts(page=page, page_size=page_size, search_query=search_query)
 
     def get_contact_by_id(self, contact_id: str | uuid.UUID) -> ContactPerson:
         """
@@ -127,7 +131,7 @@ class CRMService(BaseService):
     Service handling business logic and lifecycle for Lead aggregate.
     """
     STATUS_TRANSITION_MATRIX = {
-        "NEW": ["ASSIGNED", "LOST"],
+        "NEW": ["ASSIGNED", "CONTACTED", "LOST"],
         "ASSIGNED": ["CONTACTED", "LOST"],
         "CONTACTED": ["REQUIREMENT_GATHERING", "LOST"],
         "REQUIREMENT_GATHERING": ["PROPOSAL_SENT", "LOST"],
@@ -180,6 +184,43 @@ class CRMService(BaseService):
             db.session.flush()
         return status
 
+    def _resolve_auto_operations_owner(self) -> uuid.UUID | None:
+        """
+        Least-loaded Round-Robin Auto-Assignment Strategy:
+        Finds active and available TeamMembers holding the OPERATIONS role,
+        counts their current active leads, and selects the member with the lowest workload.
+        """
+        stmt_ops = (
+            select(TeamMember)
+            .join(Role, TeamMember.role_id == Role.id)
+            .where(
+                TeamMember.is_active == True,
+                TeamMember.is_deleted == False,
+                (func.upper(Role.code).like("%OPERATIONS%") | func.upper(Role.code).like("%OP%"))
+            )
+        )
+        ops_members = list(db.session.scalars(stmt_ops).all())
+        if not ops_members:
+            return None
+
+        closed_status_stmt = select(LeadStatus.id).where(
+            func.upper(LeadStatus.code).in_(["WON", "LOST"])
+        )
+        closed_status_ids = set(db.session.scalars(closed_status_stmt).all())
+
+        member_workload = []
+        for member in ops_members:
+            lead_count_stmt = select(func.count(Lead.id)).where(
+                Lead.owner_team_member_id == member.id,
+                Lead.is_deleted == False,
+                ~Lead.current_status_id.in_(closed_status_ids) if closed_status_ids else True
+            )
+            count = db.session.scalar(lead_count_stmt) or 0
+            member_workload.append((count, member.id))
+
+        member_workload.sort(key=lambda x: x[0])
+        return member_workload[0][1]
+
     def create_lead(self, data: dict, context_team_member_id: str | uuid.UUID | None = None) -> Lead:
         """
         Create a new Lead within a single database transaction boundary.
@@ -191,8 +232,14 @@ class CRMService(BaseService):
         else:
             contact = self.contact_service.create_or_get_contact(data["contact_person"])
 
-        # Determine status
+        # Determine owner and status (auto-assign unassigned leads to Operations role)
         owner_id = data.get("owner_team_member_id")
+        is_auto_assigned = False
+        if not owner_id:
+            owner_id = self._resolve_auto_operations_owner()
+            if owner_id:
+                is_auto_assigned = True
+
         if data.get("current_status_id"):
             status_id = data["current_status_id"]
         else:
@@ -201,24 +248,37 @@ class CRMService(BaseService):
             status_obj = self._resolve_status(status_code)
             status_id = status_obj.id
 
+        # Safely parse UUID strings into uuid.UUID objects
+        def _to_uuid(val):
+            if not val:
+                return None
+            return uuid.UUID(str(val)) if isinstance(val, str) else val
+
+        lead_source_id = _to_uuid(data.get("lead_source_id"))
+        trip_type_id = _to_uuid(data.get("trip_type_id"))
+        priority_id = _to_uuid(data.get("priority_id"))
+        package_id = _to_uuid(data.get("package_id"))
+        org_division_id = _to_uuid(data.get("organization_division_id"))
+        owner_id = _to_uuid(owner_id)
+
         # Validate lookups exist
-        if data.get("lead_source_id") and not db.session.get(LeadSource, data["lead_source_id"]):
+        if lead_source_id and not db.session.get(LeadSource, lead_source_id):
             raise ValidationException("Invalid lead_source_id.")
-        if data.get("trip_type_id") and not db.session.get(TripType, data["trip_type_id"]):
+        if trip_type_id and not db.session.get(TripType, trip_type_id):
             raise ValidationException("Invalid trip_type_id.")
-        if data.get("priority_id") and not db.session.get(LeadPriority, data["priority_id"]):
+        if priority_id and not db.session.get(LeadPriority, priority_id):
             raise ValidationException("Invalid priority_id.")
-        if data.get("package_id") and not db.session.get(Package, data["package_id"]):
+        if package_id and not db.session.get(Package, package_id):
             raise ValidationException("Invalid package_id.")
 
         # Create Lead Instance
         lead = Lead(
             contact_person_id=contact.id,
-            lead_source_id=data["lead_source_id"],
-            organization_division_id=data.get("organization_division_id"),
-            package_id=data.get("package_id"),
-            trip_type_id=data.get("trip_type_id"),
-            priority_id=data.get("priority_id"),
+            lead_source_id=lead_source_id,
+            organization_division_id=org_division_id,
+            package_id=package_id,
+            trip_type_id=trip_type_id,
+            priority_id=priority_id,
             travel_start_date=data.get("travel_start_date"),
             travel_end_date=data.get("travel_end_date"),
             estimated_trip_days=data.get("estimated_trip_days"),
@@ -244,33 +304,22 @@ class CRMService(BaseService):
         if "destinations" in data:
             self._sync_lead_destinations(lead, data["destinations"])
 
-        # Retries for unique lead number generation on collision
+        # Generate next guaranteed unique lead number
         year = datetime.now(timezone.utc).year
-        success = False
-        for attempt in range(3):
-            count = self.repository.count_leads_by_year(year)
-            lead.lead_number = f"AM-LD-{year}-{str(count + 1).zfill(5)}"
-            try:
-                # Flush to check for unique constraint violations
-                db.session.add(lead)
-                db.session.flush()
-                success = True
-                break
-            except IntegrityError:
-                db.session.rollback()
-                # If unique constraint failed on lead_number, retry count
-                continue
+        lead.lead_number = self.repository.generate_next_lead_number(year)
 
-        if not success:
-            raise BusinessException(
-                "Max retries reached for unique lead number generation.",
-                code="ERR_LEAD_NUMBER_GENERATION"
-            )
+        db.session.add(lead)
+        db.session.flush()
 
         # Log initial assignment history if owner was assigned
         if owner_id:
             initial_status_obj = db.session.get(LeadStatus, status_id)
             status_name = initial_status_obj.name if initial_status_obj else "Assigned"
+            hist_reason = (
+                "Automated Round-Robin Allocation to Operations Team"
+                if is_auto_assigned
+                else "Initial manual allocation upon intake"
+            )
             hist = AssignmentHistory(
                 entity_type="Lead",
                 entity_id=lead.id,
@@ -278,7 +327,7 @@ class CRMService(BaseService):
                 new_team_member_id=owner_id,
                 effective_from=datetime.now(timezone.utc),
                 entity_status=status_name,
-                reason="Initial manual allocation upon intake"
+                reason=hist_reason
             )
             db.session.add(hist)
 
@@ -559,10 +608,23 @@ class CRMService(BaseService):
             db.session.add(proposal)
             db.session.flush()
 
+        # Determine booking source based on lead origin
+        lead_source_code = lead.lead_source.code if lead.lead_source else None
+        is_public_form = (
+            lead_source_code in ["TRIP_REQUEST", "WEBSITE"] or 
+            not lead.created_by_team_member_id
+        )
+        booking_source_code = "WEBSITE" if is_public_form else "ADMIN"
+
         # Build travelers and installments data if not provided in payload
         booking_data = {
             "proposal_id": str(proposal.id),
             "group_name": data.get("group_name") or f"BK-{lead.lead_number}",
+            "trip_start_date": data.get("trip_start_date"),
+            "trip_end_date": data.get("trip_end_date"),
+            "total_amount": data.get("total_amount"),
+            "booking_source_code": booking_source_code,
+            "booking_type_id": data.get("booking_type_id"),
             "travelers": data.get("travelers") or [
                 {
                     "name": lead.contact_person.name if lead.contact_person else "Guest Traveler",
@@ -675,6 +737,17 @@ class CRMActivityService(BaseService):
         lead = db.session.get(Lead, uid)
         if not lead or lead.is_deleted:
             raise NotFoundException("Lead not found.")
+
+        # Auto-advance lead status to CONTACTED if it is currently NEW or ASSIGNED
+        if lead.current_status_id:
+            current_status = db.session.get(LeadStatus, lead.current_status_id)
+            if current_status and current_status.code in ("NEW", "ASSIGNED"):
+                contacted_status = db.session.execute(
+                    select(LeadStatus).where(func.upper(LeadStatus.code) == "CONTACTED")
+                ).scalars().first()
+                if contacted_status:
+                    lead.current_status_id = contacted_status.id
+                    lead.version += 1
 
         type_obj = self._resolve_activity_type(data["activity_type_id"])
 
@@ -820,6 +893,18 @@ class FollowUpService(BaseService):
         if context_team_member_id:
             followup.updated_by_team_member_id = context_team_member_id
 
+        # Auto-advance lead status to CONTACTED if it is currently NEW or ASSIGNED
+        lead = db.session.get(Lead, followup.lead_id)
+        if lead and lead.current_status_id:
+            current_status = db.session.get(LeadStatus, lead.current_status_id)
+            if current_status and current_status.code in ("NEW", "ASSIGNED"):
+                contacted_status = db.session.execute(
+                    select(LeadStatus).where(func.upper(LeadStatus.code) == "CONTACTED")
+                ).scalars().first()
+                if contacted_status:
+                    lead.current_status_id = contacted_status.id
+                    lead.version += 1
+
         self.repository.update(followup)
         self.commit()
 
@@ -841,19 +926,83 @@ class CRMLookupService(BaseService):
     Consolidated query service for all CRM lookup models.
     """
     def list_lookups(self, lookup_type: str) -> list:
-        """Fetch all lookup selection options for dropdowns."""
+        """Fetch all lookup selection options for dropdowns, auto-seeding defaults if missing."""
         mapping = {
-            "statuses": LeadStatus,
-            "sources": LeadSource,
-            "priorities": LeadPriority,
-            "lost_reasons": LeadLostReason,
-            "activity_types": CRMActivityType,
-            "followup_types": FollowUpType,
+            "statuses": (LeadStatus, [
+                ("NEW", "New"),
+                ("ASSIGNED", "Assigned"),
+                ("CONTACTED", "Contacted"),
+                ("REQUIREMENT_GATHERING", "Intake"),
+                ("PROPOSAL_SENT", "Proposal"),
+                ("NEGOTIATION", "Negotiation"),
+                ("WON", "Won"),
+                ("LOST", "Lost")
+            ]),
+            "sources": (LeadSource, [
+                ("TRIP_REQUEST", "Trip Request"),
+                ("WEBSITE", "Website Intake"),
+                ("INSTAGRAM", "Instagram Direct"),
+                ("FACEBOOK", "Facebook Ad"),
+                ("REFERRAL", "Customer Referral"),
+                ("WALK_IN", "Walk-in Desk")
+            ]),
+            "priorities": (LeadPriority, [
+                ("LOW", "Low"),
+                ("MEDIUM", "Medium"),
+                ("HIGH", "High"),
+                ("URGENT", "Urgent")
+            ]),
+            "lost_reasons": (LeadLostReason, [
+                ("PRICE_HIGH", "Price too high"),
+                ("COMPETITOR", "Chosen competitor"),
+                ("CANCELLED", "Trip cancelled by client"),
+                ("NO_RESPONSE", "Client unreachable / unresponsive")
+            ]),
+            "activity_types": (CRMActivityType, [
+                ("CALL", "Phone Call"),
+                ("EMAIL", "Email Exchange"),
+                ("MEETING", "In-person Meeting"),
+                ("WHATSAPP", "WhatsApp Chat"),
+                ("SITE_VISIT", "Site Visit"),
+                ("NOTE", "Internal Note")
+            ]),
+            "followup_types": (FollowUpType, [
+                ("CALL", "Phone Call"),
+                ("EMAIL", "Email"),
+                ("MEETING", "Meeting"),
+                ("WHATSAPP", "WhatsApp")
+            ]),
+            "trip_types": (TripType, [
+                ("COUPLE", "Couple / Honeymoon"),
+                ("FAMILY", "Family"),
+                ("FRIENDS", "Friends Group"),
+                ("COLLEGE_IV", "College Industrial Visit (IV)"),
+                ("SCHOOL_TOUR", "School Tour"),
+                ("CORPORATE", "Corporate Tour"),
+                ("CLUB_TOUR", "Association / Club Tour"),
+                ("CUSTOM_GROUP", "Custom Group Tour"),
+                ("INDIVIDUAL", "Individual Traveler")
+            ]),
         }
 
-        model = mapping.get(lookup_type.lower())
-        if not model:
+        entry = mapping.get(lookup_type.lower())
+        if not entry:
             raise NotFoundException(f"Lookup type '{lookup_type}' is not supported.")
 
+        model, defaults = entry
         stmt = select(model).where(model.is_active == True)
-        return list(db.session.scalars(stmt).all())
+        records = list(db.session.scalars(stmt).all())
+
+        # Auto-seed defaults if missing
+        existing_codes = {r.code.upper() for r in records if hasattr(r, "code") and r.code}
+        needed = [d for d in defaults if d[0] not in existing_codes]
+        if needed:
+            for idx, (code, name) in enumerate(needed):
+                item = model(code=code, name=name, is_active=True)
+                if hasattr(item, "display_order"):
+                    item.display_order = idx + 1
+                db.session.add(item)
+            db.session.commit()
+            records = list(db.session.scalars(stmt).all())
+
+        return records

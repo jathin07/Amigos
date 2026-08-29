@@ -23,6 +23,19 @@ class BaseConfig:
     FEATURE_AI_ITINERARY = os.getenv("FEATURE_AI_ITINERARY", "False").lower() == "true"
     FEATURE_BACKGROUND_WORKERS = os.getenv("FEATURE_BACKGROUND_WORKERS", "False").lower() == "true"
 
+    # Cloudflare R2 Configuration
+    R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "amigos-storage")
+    R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "4eef1037b718d26dca5940bb91972ec3")
+    R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "8a0ba6292608521213c00448b6d1f4c2")
+    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "e57ff732b52fa9c8e5ca28609317e7d071895aacda55b61bb2508637c06108ca")
+    R2_ENDPOINT = os.getenv("R2_ENDPOINT", "https://4eef1037b718d26dca5940bb91972ec3.r2.cloudflarestorage.com")
+    R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://cdn.amigostourism.com")
+    R2_PRESIGNED_EXPIRY = int(os.getenv("R2_PRESIGNED_EXPIRY", 600))
+
+    # Caching configuration
+    CACHE_TYPE = os.getenv("CACHE_TYPE", "SimpleCache")
+    CACHE_DEFAULT_TIMEOUT = int(os.getenv("CACHE_DEFAULT_TIMEOUT", 300))
+
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///dev.db")
@@ -30,6 +43,7 @@ class DevelopmentConfig(BaseConfig):
 class TestingConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    CACHE_TYPE = "SimpleCache"
 
 class ProductionConfig(BaseConfig):
     DEBUG = False

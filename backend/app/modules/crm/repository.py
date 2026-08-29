@@ -53,6 +53,72 @@ class ContactPersonRepository(SQLAlchemyBaseRepository[ContactPerson]):
         )
         return db.session.scalar(stmt)
 
+    def paginate_contacts(self, page=1, page_size=20, search_query=None):
+        import math
+        stmt = select(ContactPerson).where(
+            ContactPerson.is_deleted == False
+        )
+        if search_query:
+            q = f"%{search_query.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    ContactPerson.name.ilike(q),
+                    ContactPerson.phone.ilike(q),
+                    ContactPerson.email.ilike(q)
+                )
+            )
+            
+        # Count total records
+        total_stmt = select(func.count()).select_from(stmt.subquery())
+        total = db.session.scalar(total_stmt) or 0
+
+        # Sort by created_at desc
+        stmt = stmt.order_by(ContactPerson.created_at.desc())
+
+        # Offset & Limit pagination
+        offset = (page - 1) * page_size
+        stmt = stmt.offset(offset).limit(page_size)
+
+        items = list(db.session.scalars(stmt).all())
+        
+        # Hydrate dynamic/calculated summaries for the UI
+        # Like count of bookings and total lifetime value
+        from app.models import Booking
+        hydrated_items = []
+        for contact in items:
+            # Query booking stats
+            booking_stmt = select(
+                func.count(Booking.id).label("total_bookings"),
+                func.coalesce(func.sum(Booking.total_amount), 0).label("ltv"),
+                func.max(Booking.trip_start_date).label("last_booking_date")
+            ).where(
+                Booking.contact_person_id == contact.id,
+                Booking.is_deleted == False
+            )
+            stats = db.session.execute(booking_stmt).first()
+            
+            contact_dict = {
+                "id": str(contact.id),
+                "name": contact.name,
+                "phone": contact.phone,
+                "email": contact.email,
+                "designation": contact.designation,
+                "alternate_phone": contact.alternate_phone,
+                "preferred_contact_method": contact.preferred_contact_method,
+                "notes": contact.notes,
+                "total_bookings": stats.total_bookings if stats else 0,
+                "lifetime_value": float(stats.ltv) if stats and stats.ltv else 0.0,
+                "last_contact_date": stats.last_booking_date.isoformat() if stats and stats.last_booking_date else contact.updated_at.isoformat() if contact.updated_at else contact.created_at.isoformat() if contact.created_at else None
+            }
+            hydrated_items.append(contact_dict)
+
+        return PaginationResult(
+            items=hydrated_items,
+            page=page,
+            page_size=page_size,
+            total_records=total
+        )
+
 
 class LeadRepository(SQLAlchemyBaseRepository[Lead]):
     """
@@ -77,13 +143,38 @@ class LeadRepository(SQLAlchemyBaseRepository[Lead]):
     def count_leads_by_year(self, year: int) -> int:
         """
         Count the number of active leads created in a given calendar year.
-        Uses SQLAlchemy extract to remain dialect-agnostic (works on both SQLite and PostgreSQL).
         """
         stmt = select(func.count(Lead.id)).where(
-            extract("year", Lead.created_at) == year,
             Lead.is_deleted == False
         )
         return db.session.scalar(stmt) or 0
+
+    def generate_next_lead_number(self, year: int) -> str:
+        """
+        Queries existing lead numbers for the given year to find the max sequence number,
+        preventing unique constraint collisions.
+        """
+        prefix = f"AM-LD-{year}-"
+        stmt = select(Lead.lead_number).where(
+            Lead.lead_number.like(f"{prefix}%")
+        )
+        existing_numbers = db.session.scalars(stmt).all()
+        
+        max_seq = 0
+        for num_str in existing_numbers:
+            if not num_str:
+                continue
+            try:
+                parts = num_str.split("-")
+                if len(parts) >= 4:
+                    seq = int(parts[-1])
+                    if seq > max_seq:
+                        max_seq = seq
+            except (ValueError, IndexError):
+                pass
+                
+        next_seq = max_seq + 1
+        return f"{prefix}{str(next_seq).zfill(5)}"
 
     def paginate(
         self,
@@ -112,14 +203,22 @@ class LeadRepository(SQLAlchemyBaseRepository[Lead]):
         stmt = stmt.where(Lead.is_deleted == False)
 
         # Apply specific filters
-        if "current_status_id" in filters and filters["current_status_id"]:
-            stmt = stmt.where(Lead.current_status_id == filters["current_status_id"])
-        if "priority_id" in filters and filters["priority_id"]:
-            stmt = stmt.where(Lead.priority_id == filters["priority_id"])
-        if "lead_source_id" in filters and filters["lead_source_id"]:
-            stmt = stmt.where(Lead.lead_source_id == filters["lead_source_id"])
-        if "owner_team_member_id" in filters and filters["owner_team_member_id"]:
-            stmt = stmt.where(Lead.owner_team_member_id == filters["owner_team_member_id"])
+        if filters.get("unassigned") in [True, "true", "1"] or str(filters.get("owner_team_member_id", "")).lower() in ["unassigned", "none", "null"]:
+            stmt = stmt.where(Lead.owner_team_member_id.is_(None))
+        else:
+            filter_map = [
+                ("current_status_id", Lead.current_status_id),
+                ("priority_id", Lead.priority_id),
+                ("lead_source_id", Lead.lead_source_id),
+                ("owner_team_member_id", Lead.owner_team_member_id),
+            ]
+            for key, col in filter_map:
+                if key in filters and filters[key]:
+                    try:
+                        val_uid = uuid.UUID(str(filters[key]))
+                        stmt = stmt.where(col == val_uid)
+                    except (ValueError, TypeError, AttributeError):
+                        stmt = stmt.where(col == filters[key])
         
         # Date range filters
         if "travel_start_date_gte" in filters and filters["travel_start_date_gte"]:

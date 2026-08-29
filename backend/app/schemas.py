@@ -12,6 +12,11 @@ class LeadSchema(Schema):
     budget = fields.String(allow_none=True, validate=validate.Length(max=50))
     notes = fields.String(allow_none=True)
     status = fields.String(validate=validate.OneOf(["pending", "contacted", "confirmed", "completed"]), allow_none=True)
+    trip_type = fields.String(allow_none=True)
+    estimated_trip_days = fields.Integer(allow_none=True, validate=validate.Range(min=1))
+    male_count = fields.Integer(allow_none=True, validate=validate.Range(min=0))
+    female_count = fields.Integer(allow_none=True, validate=validate.Range(min=0))
+    faculty_count = fields.Integer(allow_none=True, validate=validate.Range(min=0))
 
 class PackageSchema(Schema):
     title = fields.String(required=True, validate=validate.Length(min=1, max=150))

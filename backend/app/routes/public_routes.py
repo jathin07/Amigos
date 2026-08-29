@@ -8,6 +8,7 @@ from app.exceptions import ValidationException, DatabaseException
 import requests
 import os
 import yaml
+import re
 from datetime import datetime
 
 public_bp = Blueprint('public', __name__)
@@ -82,8 +83,11 @@ def create_lead():
     import uuid
     import re
     from sqlalchemy import select, func
-    from app.models import LeadSource, Destination
+    from app.models import LeadSource, Destination, TripType
     from app.modules.crm.service import CRMService
+    from app.modules.master.country.models import Country
+    from app.modules.master.state.models import State
+    from app.modules.master.district.models import District
 
     data = request.get_json(silent=True) or {}
 
@@ -106,6 +110,17 @@ def create_lead():
         db.session.add(source)
         db.session.flush()
     lead_source_id = source.id
+    
+    trip_type_code = validated_data.get("trip_type")
+    trip_type_id = None
+    if trip_type_code:
+        t_code = trip_type_code.strip().upper().replace(" ", "_")
+        t_type = db.session.execute(select(TripType).where(TripType.code == t_code)).scalars().first()
+        if not t_type:
+            t_type = TripType(code=t_code, name=trip_type_code.strip().title(), is_active=True)
+            db.session.add(t_type)
+            db.session.flush()
+        trip_type_id = t_type.id
 
     pkg_id = validated_data.get("package_id")
     if pkg_id:
@@ -121,17 +136,56 @@ def create_lead():
         dest = db.session.execute(
             select(Destination).where(func.lower(Destination.name) == dest_name.lower())
         ).scalars().first()
-        if dest:
-            destinations_payload.append({
-                "destination_id": dest.id,
-                "priority": "High"
-            })
-        else:
-            notes = f"{notes}\n[Preferred Destination]: {dest_name}".strip()
+        if not dest:
+            # Query fallback IDs for NOT NULL geography columns
+            country_obj = db.session.execute(select(Country)).scalars().first()
+            if not country_obj:
+                country_obj = Country(name="India", code="IN", phone_code="+91", display_order=1)
+                db.session.add(country_obj)
+                db.session.flush()
+                
+            state_obj = db.session.execute(select(State)).scalars().first()
+            if not state_obj:
+                state_obj = State(name="Kerala", code="KL", country_id=country_obj.id, display_order=1)
+                db.session.add(state_obj)
+                db.session.flush()
+                
+            district_obj = db.session.execute(select(District)).scalars().first()
+            if not district_obj:
+                district_obj = District(name="Ernakulam", code="EKM", state_id=state_obj.id, display_order=1)
+                db.session.add(district_obj)
+                db.session.flush()
+
+            # Create a new active destination in the catalog
+            dest = Destination(
+                name=dest_name.strip().title(), 
+                code=dest_name.strip().upper().replace(" ", "_")[:20], 
+                slug=dest_name.strip().lower().replace(" ", "-"),
+                country_id=country_obj.id,
+                state_id=state_obj.id,
+                district_id=district_obj.id,
+                is_active=True
+            )
+            db.session.add(dest)
+            db.session.flush()
+        destinations_payload.append({
+            "destination_id": dest.id,
+            "priority": "High"
+        })
 
     travel_dates = validated_data.get("travel_dates")
+    travel_start_date = None
+    travel_end_date = None
     if travel_dates:
-        notes = f"{notes}\n[Expected Travel Dates]: {travel_dates}".strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", travel_dates):
+            try:
+                dt_obj = datetime.strptime(travel_dates, "%Y-%m-%d").date()
+                travel_start_date = dt_obj
+                travel_end_date = dt_obj
+            except ValueError:
+                notes = f"{notes}\n[Expected Travel Dates]: {travel_dates}".strip()
+        else:
+            notes = f"{notes}\n[Expected Travel Dates]: {travel_dates}".strip()
 
     budget_str = validated_data.get("budget")
     budget_val = None
@@ -147,7 +201,14 @@ def create_lead():
         "contact_person": contact_person,
         "lead_source_id": lead_source_id,
         "package_id": pkg_id,
+        "trip_type_id": trip_type_id,
+        "travel_start_date": travel_start_date,
+        "travel_end_date": travel_end_date,
+        "estimated_trip_days": validated_data.get("estimated_trip_days"),
         "traveler_count": validated_data.get("travelers") or 1,
+        "male_count": validated_data.get("male_count"),
+        "female_count": validated_data.get("female_count"),
+        "faculty_count": validated_data.get("faculty_count"),
         "budget": budget_val,
         "notes": notes,
         "destinations": destinations_payload

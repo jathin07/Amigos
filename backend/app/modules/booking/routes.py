@@ -45,7 +45,10 @@ def _flatten_errors(messages: dict) -> list[dict]:
 
 def _get_context_team_member_id() -> uuid.UUID | None:
     """Safely retrieves current user team_member_id context."""
-    identity = get_jwt_identity()
+    try:
+        identity = get_jwt_identity()
+    except RuntimeError:
+        identity = None
     if not identity:
         return None
     try:
@@ -188,6 +191,23 @@ def cancel_booking(id):
     booking = service.cancel_booking(id, data, context_id)
     response_data = BookingDetailResponseSchema().dump(booking)
     return service.success(data=response_data, message="Booking cancelled successfully.")
+
+
+@booking_bp.route("/bookings/<uuid:id>/status", methods=["POST"])
+@permission_required("booking.update")
+def update_booking_status(id):
+    payload = request.get_json(silent=True) or {}
+    target_status = payload.get("status_code")
+    if not target_status:
+        service = BookingService()
+        return service.error("status_code is required.", code="ERR_VALIDATION", status_code=422)
+
+    notes = payload.get("notes")
+    context_id = _get_context_team_member_id()
+    service = BookingService()
+    booking = service.update_booking_status(id, target_status, notes=notes, context_team_member_id=context_id)
+    response_data = BookingDetailResponseSchema().dump(booking)
+    return service.success(data=response_data, message=f"Booking status updated to {target_status}.")
 
 
 # ─────────────────────────────────────────────────────────────────

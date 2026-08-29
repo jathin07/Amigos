@@ -130,6 +130,8 @@ class ProposalSummaryResponseSchema(Schema):
     """
     id             = fields.UUID()
     lead_id        = fields.UUID()
+    lead_number    = fields.Method("get_lead_number")
+    customer_name  = fields.Method("get_customer_name")
     version        = fields.Integer()
     proposal_title = fields.String()
     price_per_person = fields.Decimal(allow_none=True, places=2, as_string=True)
@@ -141,6 +143,14 @@ class ProposalSummaryResponseSchema(Schema):
     approved_date  = fields.Date(allow_none=True)
     row_version    = fields.Integer()
     audit_info     = fields.Method("get_audit_info")
+
+    def get_lead_number(self, obj):
+        return obj.lead.lead_number if obj.lead else None
+
+    def get_customer_name(self, obj):
+        if obj.lead and obj.lead.contact_person:
+            return obj.lead.contact_person.name
+        return None
 
     def get_status(self, obj):
         if obj.status:
@@ -161,6 +171,8 @@ class ProposalDetailResponseSchema(Schema):
     """
     id                          = fields.UUID()
     lead_id                     = fields.UUID()
+    lead_number                 = fields.Method("get_lead_number")
+    customer_name               = fields.Method("get_customer_name")
     version                     = fields.Integer()
     proposal_title              = fields.String()
     price_per_person            = fields.Decimal(allow_none=True, places=2, as_string=True)
@@ -178,6 +190,14 @@ class ProposalDetailResponseSchema(Schema):
     destinations                = fields.Method("get_destinations")
     row_version                 = fields.Integer()
     audit_info                  = fields.Method("get_audit_info")
+
+    def get_lead_number(self, obj):
+        return obj.lead.lead_number if obj.lead else None
+
+    def get_customer_name(self, obj):
+        if obj.lead and obj.lead.contact_person:
+            return obj.lead.contact_person.name
+        return None
 
     def get_status(self, obj):
         if obj.status:

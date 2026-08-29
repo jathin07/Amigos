@@ -489,12 +489,18 @@ class Lead(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin, OwnershipMixin
     documents = db.relationship("Document", backref="lead", foreign_keys="[Document.lead_id]", cascade="all, delete-orphan", lazy=True)
 
     contact_person = db.relationship("ContactPerson", foreign_keys=[contact_person_id], lazy=True)
+    organization_division = db.relationship("OrganizationDivision", foreign_keys=[organization_division_id], lazy=True)
     current_status = db.relationship("LeadStatus", foreign_keys=[current_status_id], lazy=True)
     lead_source = db.relationship("LeadSource", foreign_keys=[lead_source_id], lazy=True)
     priority = db.relationship("LeadPriority", foreign_keys=[priority_id], lazy=True)
     trip_type = db.relationship("TripType", foreign_keys=[trip_type_id], lazy=True)
     lost_reason = db.relationship("LeadLostReason", foreign_keys=[lost_reason_id], lazy=True)
     package = db.relationship("Package", foreign_keys=[package_id], lazy=True)
+    owner_team_member = db.relationship("TeamMember", foreign_keys="[Lead.owner_team_member_id]", lazy=True)
+
+    @property
+    def owner(self):
+        return self.owner_team_member
 
     __table_args__ = (
         db.Index("idx_lead_number", "lead_number", unique=True),
@@ -805,6 +811,9 @@ class TripPlan(db.Model, TimestampMixin, AuditMixin):
     trip_plan_type = db.Column(db.String(50), default='MANUAL', nullable=False)
 
     trip_days = db.relationship("TripDay", backref="trip_plan", cascade="all, delete-orphan", lazy=True)
+    status = db.relationship("TripPlanStatus", foreign_keys=[status_id], lazy=True)
+    prepared_by = db.relationship("TeamMember", foreign_keys=[prepared_by_team_member_id], lazy=True)
+    approved_by = db.relationship("TeamMember", foreign_keys=[approved_by_team_member_id], lazy=True)
 
     __table_args__ = (
         db.UniqueConstraint("booking_id", "version", name="uq_trip_plan_booking_version"),
@@ -853,6 +862,9 @@ class VendorAllocation(db.Model, TimestampMixin, AuditMixin, OwnershipMixin):
 
     vendor_payments = db.relationship("VendorPayment", backref="vendor_allocation", cascade="all, delete-orphan", lazy=True)
     expenses = db.relationship("Expense", backref="vendor_allocation", lazy=True)
+    allocation_status = db.relationship("VendorAllocationStatus", foreign_keys=[allocation_status_id], lazy=True)
+    vendor = db.relationship("Vendor", foreign_keys=[vendor_id], lazy=True)
+    confirmed_by = db.relationship("TeamMember", foreign_keys=[confirmed_by_team_member_id], lazy=True)
 
     @property
     def total_paid(self):
@@ -889,6 +901,10 @@ class Task(db.Model, TimestampMixin, AuditMixin, SoftDeleteMixin, OwnershipMixin
     actual_hours = db.Column(db.Numeric(12, 2))
     
     subtasks = db.relationship("Task", backref=db.backref('parent_task', remote_side=[id]), lazy=True)
+    status = db.relationship("TaskStatus", foreign_keys=[task_status_id], lazy=True)
+    priority = db.relationship("TaskPriority", foreign_keys=[priority_id], lazy=True)
+    assigned_to = db.relationship("TeamMember", foreign_keys=[assigned_to_team_member_id], lazy=True)
+    assigned_by = db.relationship("TeamMember", foreign_keys=[assigned_by_team_member_id], lazy=True)
 
     __table_args__ = (
         db.Index("idx_task_assigned_to", "assigned_to_team_member_id"),
@@ -927,7 +943,11 @@ class Payment(db.Model, TimestampMixin, AuditMixin):
     received_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
     verified_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
 
-    payment_status = db.relationship("PaymentStatus")
+    payment_status = db.relationship("PaymentStatus", foreign_keys=[payment_status_id], lazy=True)
+    status = db.relationship("PaymentStatus", foreign_keys=[payment_status_id], lazy=True, overlaps="payment_status")
+    payment_method = db.relationship(PaymentMethod, foreign_keys=[payment_method_id], lazy=True)
+    payment_type = db.relationship("PaymentType", foreign_keys=[payment_type_id], lazy=True)
+    verified_by = db.relationship("TeamMember", foreign_keys=[verified_by_team_member_id], lazy=True)
 
     __table_args__ = (
         db.Index("idx_payment_booking", "booking_id"),
@@ -948,7 +968,8 @@ class VendorPayment(db.Model, TimestampMixin, AuditMixin):
     receipt_url = db.Column(db.Text)
     internal_notes = db.Column(db.Text)
 
-    payment_status = db.relationship("PaymentStatus")
+    payment_status = db.relationship("PaymentStatus", foreign_keys=[payment_status_id], lazy=True)
+    payment_method = db.relationship(PaymentMethod, foreign_keys=[payment_method_id], lazy=True)
 
     __table_args__ = (
         db.CheckConstraint("amount > 0", name="chk_vendor_payment_amount"),
@@ -968,7 +989,8 @@ class Expense(db.Model, TimestampMixin, AuditMixin):
     remarks = db.Column(db.Text)
     approved_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
     
-    expense_type = db.relationship("ExpenseType")
+    expense_type = db.relationship("ExpenseType", foreign_keys=[expense_type_id], lazy=True)
+    expense_category = db.relationship("ExpenseCategory", foreign_keys=[expense_category_id], lazy=True)
 
     __table_args__ = (
         db.CheckConstraint("amount > 0", name="chk_expense_amount"),
@@ -984,6 +1006,9 @@ class Refund(db.Model, TimestampMixin, AuditMixin):
     payment_method_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("payment_methods.id", ondelete="RESTRICT"), nullable=False)
     transaction_reference = db.Column(db.String(100))
     remarks = db.Column(db.Text)
+
+    refund_status = db.relationship("RefundStatus", foreign_keys=[refund_status_id], lazy=True)
+    payment_method = db.relationship(PaymentMethod, foreign_keys=[payment_method_id], lazy=True)
 
     __table_args__ = (
         db.CheckConstraint("amount > 0", name="chk_refund_amount"),
@@ -1048,7 +1073,51 @@ class AuditLog(db.Model, TimestampMixin):
     request_id = db.Column(db.String(100))
     endpoint = db.Column(db.String(255))
     http_method = db.Column(db.String(10))
- 
+
+class UploadedFile(db.Model, TimestampMixin):
+    __tablename__ = "uploaded_files"
+    id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    object_key = db.Column(db.String(1000), nullable=False, unique=True)
+    original_filename = db.Column(db.String(255), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)  # in bytes
+    content_type = db.Column(db.String(100), nullable=False)
+    namespace = db.Column(db.String(20), nullable=False)  # 'public' or 'private'
+    folder = db.Column(db.String(100), nullable=False)  # e.g., 'public/team'
+    uploaded_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
+    is_completed = db.Column(db.Boolean, default=False, nullable=False)
+    completed_at = db.Column(db.DateTime(timezone=True))
+    sha256_hash = db.Column(db.String(64), nullable=True)
+
+    __table_args__ = (
+        db.Index("idx_uploaded_file_object_key", "object_key"),
+        db.Index("idx_uploaded_file_completed", "is_completed"),
+    )
+
+class ReportJob(db.Model, TimestampMixin):
+    __tablename__ = "report_jobs"
+    id = db.Column(db.Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_type = db.Column(db.String(50), nullable=False)  # e.g., FINANCE_PL, CRM_CONVERSION
+    status = db.Column(db.String(30), nullable=False, default="QUEUED")  # QUEUED, PROCESSING, COMPLETED, FAILED
+    progress_percentage = db.Column(db.Numeric(5, 2), default=0.0)
+    file_url = db.Column(db.Text, nullable=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    error_details = db.Column(db.Text, nullable=True)
+    row_count = db.Column(db.Integer, nullable=True)
+    file_size_bytes = db.Column(db.Integer, nullable=True)
+    created_by_team_member_id = db.Column(db.Uuid(as_uuid=True), db.ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True)
+    
+    # Audit & Monitoring Additions
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    execution_time_ms = db.Column(db.Integer, nullable=True)
+    requested_format = db.Column(db.String(10), nullable=False, default="csv")
+    requested_by_ip = db.Column(db.String(45), nullable=True)
+    download_count = db.Column(db.Integer, default=0, nullable=False)
+    last_downloaded_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    sha256_hash = db.Column(db.String(64), nullable=True)
+    
+    created_by = db.relationship("TeamMember", foreign_keys=[created_by_team_member_id], lazy=True)
+
 # Phase 1: Foundation Masters
 from app.modules.master.destination.models import Destination
 from app.modules.master.city.models import City

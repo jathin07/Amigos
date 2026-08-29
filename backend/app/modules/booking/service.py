@@ -220,18 +220,74 @@ class BookingService(BaseService):
             db.session.flush()
 
         booking_date_val = datetime.now(timezone.utc).date()
-        total_amount_val = Decimal(str(proposal.total_amount or "0.00"))
+        
+        # Confirmed Dates & Price Overrides
+        total_amount = data.get("total_amount")
+        if total_amount is not None:
+            total_amount_val = Decimal(str(total_amount))
+        else:
+            total_amount_val = Decimal(str(proposal.total_amount or "0.00"))
+
+        trip_start_date = data.get("trip_start_date")
+        if trip_start_date:
+            if isinstance(trip_start_date, str):
+                trip_start_date = datetime.strptime(trip_start_date, "%Y-%m-%d").date()
+        else:
+            trip_start_date = lead.travel_start_date or booking_date_val
+
+        trip_end_date = data.get("trip_end_date")
+        if trip_end_date:
+            if isinstance(trip_end_date, str):
+                trip_end_date = datetime.strptime(trip_end_date, "%Y-%m-%d").date()
+        else:
+            trip_end_date = lead.travel_end_date or booking_date_val
 
         # Validations
         self._validate_travelers(data.get("travelers", []))
         self._validate_installments(data.get("installments", []), total_amount_val, booking_date_val)
 
-        # Resolve lookup metadata owned by Master module
-        stmt_type = select(BookingType).where(BookingType.code == "INDIVIDUAL")
-        b_type = db.session.scalar(stmt_type) or BookingType(code="INDIVIDUAL", name="Individual", is_active=True)
+        # Resolve booking type
+        booking_type_id = data.get("booking_type_id")
+        booking_type_code = data.get("booking_type_code")
+        if booking_type_id:
+            if isinstance(booking_type_id, str):
+                try:
+                    booking_type_id = uuid.UUID(booking_type_id)
+                except ValueError:
+                    pass
+            b_type = db.session.get(BookingType, booking_type_id)
+        elif booking_type_code:
+            b_type = db.session.scalar(select(BookingType).where(BookingType.code == booking_type_code.upper()))
+        else:
+            b_type = None
+
+        if not b_type:
+            stmt_type = select(BookingType).where(BookingType.code == "INDIVIDUAL")
+            b_type = db.session.scalar(stmt_type) or BookingType(code="INDIVIDUAL", name="Individual", is_active=True)
         
-        stmt_src = select(BookingSource).where(BookingSource.code == "CRM_CONVERSION")
-        b_source = db.session.scalar(stmt_src) or BookingSource(code="CRM_CONVERSION", name="CRM Conversion", is_active=True)
+        # Resolve booking source
+        booking_source_id = data.get("booking_source_id")
+        booking_source_code = data.get("booking_source_code")
+        if booking_source_id:
+            if isinstance(booking_source_id, str):
+                try:
+                    booking_source_id = uuid.UUID(booking_source_id)
+                except ValueError:
+                    pass
+            b_source = db.session.get(BookingSource, booking_source_id)
+        elif booking_source_code:
+            b_source = db.session.scalar(select(BookingSource).where(BookingSource.code == booking_source_code.upper()))
+        else:
+            b_source = None
+
+        if not b_source:
+            if booking_source_code:
+                b_source = BookingSource(code=booking_source_code.upper(), name=booking_source_code.replace("_", " ").title(), is_active=True)
+                db.session.add(b_source)
+                db.session.flush()
+            else:
+                stmt_src = select(BookingSource).where(BookingSource.code == "CRM_CONVERSION")
+                b_source = db.session.scalar(stmt_src) or BookingSource(code="CRM_CONVERSION", name="CRM Conversion", is_active=True)
 
         stmt_status = select(BookingStatus).where(BookingStatus.code == "WAITING_FOR_ADVANCE")
         b_status = db.session.scalar(stmt_status) or BookingStatus(code="WAITING_FOR_ADVANCE", name="Waiting for Advance", is_active=True)
@@ -274,8 +330,8 @@ class BookingService(BaseService):
                         proposal_version_id=proposal.id,
                         contact_person_id=lead.contact_person_id,
                         booking_date=booking_date_val,
-                        trip_start_date=lead.travel_start_date or booking_date_val,
-                        trip_end_date=lead.travel_end_date or booking_date_val,
+                        trip_start_date=trip_start_date,
+                        trip_end_date=trip_end_date,
                         total_travelers=len(data["travelers"]),
                         total_amount=total_amount_val,
                         package_name_snapshot=package_name,
@@ -405,6 +461,21 @@ class BookingService(BaseService):
             booking.group_name = data["group_name"]
         if "internal_notes" in data:
             booking.internal_notes = data["internal_notes"]
+        if "trip_start_date" in data:
+            booking.trip_start_date = data["trip_start_date"]
+        if "trip_end_date" in data:
+            booking.trip_end_date = data["trip_end_date"]
+        if "total_amount" in data and data["total_amount"] is not None:
+            booking.total_amount = data["total_amount"]
+        if "trip_coordinator_team_member_id" in data:
+            coord_val = data["trip_coordinator_team_member_id"]
+            if coord_val:
+                coord_uid = uuid.UUID(str(coord_val))
+                coordinator = db.session.get(TeamMember, coord_uid)
+                if coordinator and not coordinator.is_deleted and coordinator.is_active:
+                    booking.trip_coordinator_team_member_id = coordinator.id
+            else:
+                booking.trip_coordinator_team_member_id = None
 
         booking.row_version += 1
         if context_team_member_id:
@@ -558,6 +629,62 @@ class BookingService(BaseService):
                 "occurred_at": datetime.now(timezone.utc).isoformat()
             }
         )
+
+        return booking
+
+    def update_booking_status(
+        self,
+        booking_id: str | uuid.UUID,
+        target_status_code: str,
+        notes: str | None = None,
+        context_team_member_id: str | uuid.UUID | None = None
+    ) -> Booking:
+        """
+        Transition booking lifecycle status along valid transition paths.
+        """
+        booking = self.repository.get(booking_id)
+        if not booking or booking.is_deleted:
+            raise NotFoundException("Booking not found.")
+
+        current_status_code = booking.status.code if booking.status else "WAITING_FOR_ADVANCE"
+        allowed = BOOKING_TRANSITIONS.get(current_status_code, [])
+
+        if target_status_code not in allowed:
+            raise BusinessException(
+                f"Invalid status transition from {current_status_code} to {target_status_code}.",
+                code="ERR_INVALID_STATUS_TRANSITION"
+            )
+
+        stmt_status = select(BookingStatus).where(BookingStatus.code == target_status_code)
+        new_status = db.session.scalar(stmt_status)
+        if not new_status:
+            status_name = target_status_code.replace("_", " ").title()
+            new_status = BookingStatus(code=target_status_code, name=status_name, is_active=True)
+            db.session.add(new_status)
+            db.session.flush()
+
+        from_status_id = booking.booking_status_id
+        booking.booking_status_id = new_status.id
+        booking.row_version += 1
+
+        # Timeline status logging
+        hist = BookingStatusHistory(
+            booking_id=booking.id,
+            from_status_id=from_status_id,
+            to_status_id=new_status.id,
+            changed_by_team_member_id=context_team_member_id,
+            notes=notes or f"Status transitioned to {new_status.name}"
+        )
+        db.session.add(hist)
+
+        self.repository.update(booking)
+        self.commit()
+
+        if target_status_code == "COMPLETED":
+            event_bus.publish(DomainEvent.TRIP_COMPLETED, {
+                "booking_id": str(booking.id),
+                "occurred_at": datetime.now(timezone.utc).isoformat()
+            })
 
         return booking
 
@@ -791,10 +918,31 @@ class BookingLookupService(BaseService):
     """
 
     def get_booking_statuses(self) -> list[BookingStatus]:
-        return list(db.session.scalars(select(BookingStatus).where(BookingStatus.is_active == True)).all())
+        items = list(db.session.scalars(select(BookingStatus).where(BookingStatus.is_active == True)).all())
+        if not items:
+            defaults = [("PENDING", "Pending"), ("CONFIRMED", "Confirmed"), ("IN_PROGRESS", "In Progress"), ("COMPLETED", "Completed"), ("CANCELLED", "Cancelled")]
+            for idx, (c, n) in enumerate(defaults):
+                db.session.add(BookingStatus(code=c, name=n, display_order=idx+1, is_active=True))
+            db.session.commit()
+            items = list(db.session.scalars(select(BookingStatus).where(BookingStatus.is_active == True)).all())
+        return items
 
     def get_booking_sources(self) -> list[BookingSource]:
-        return list(db.session.scalars(select(BookingSource).where(BookingSource.is_active == True)).all())
+        items = list(db.session.scalars(select(BookingSource).where(BookingSource.is_active == True)).all())
+        if not items:
+            defaults = [("WEBSITE", "Website Direct"), ("TRIP_REQUEST", "Trip Request Form"), ("INSTAGRAM", "Instagram Direct"), ("FACEBOOK", "Facebook Lead Ad"), ("WALK_IN", "Walk-in Desk")]
+            for idx, (c, n) in enumerate(defaults):
+                db.session.add(BookingSource(code=c, name=n, display_order=idx+1, is_active=True))
+            db.session.commit()
+            items = list(db.session.scalars(select(BookingSource).where(BookingSource.is_active == True)).all())
+        return items
 
     def get_booking_types(self) -> list[BookingType]:
-        return list(db.session.scalars(select(BookingType).where(BookingType.is_active == True)).all())
+        items = list(db.session.scalars(select(BookingType).where(BookingType.is_active == True)).all())
+        if not items:
+            defaults = [("CUSTOM_PACKAGE", "Custom Package Tour"), ("FIXED_DEPARTURE", "Fixed Departure Tour"), ("HOTEL_ONLY", "Hotel Reservation"), ("TRANSFER_ONLY", "Transfer / Cab Rental")]
+            for idx, (c, n) in enumerate(defaults):
+                db.session.add(BookingType(code=c, name=n, display_order=idx+1, is_active=True))
+            db.session.commit()
+            items = list(db.session.scalars(select(BookingType).where(BookingType.is_active == True)).all())
+        return items
